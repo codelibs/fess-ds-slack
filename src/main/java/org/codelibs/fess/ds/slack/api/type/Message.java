@@ -13,24 +13,32 @@
  * either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-package org.codelibs.fess.ds.slack.api;
+package org.codelibs.fess.ds.slack.api.type;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-public abstract class Response {
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class Message {
 
-    @JsonProperty("ok")
-    protected Boolean ok;
+    protected String type;
+    protected String ts;
+    protected String user;
+    protected String text;
 
-    @JsonProperty("error")
-    protected String error;
-
-    public Boolean ok() {
-        return ok;
+    public String getType() {
+        return type;
     }
 
-    public String getError() {
-        return error;
+    public String getTs() {
+        return ts;
+    }
+
+    public String getUser() {
+        return user;
+    }
+
+    public String getText() {
+        return text;
     }
 
 }

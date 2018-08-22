@@ -15,6 +15,8 @@
  */
 package org.codelibs.fess.ds.slack.api;
 
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsClient;
+
 import com.google.api.client.http.HttpRequest;
 import com.google.api.client.http.HttpRequestFactory;
 import com.google.api.client.http.HttpRequestInitializer;
@@ -24,6 +26,8 @@ public class SlackClient {
 
     protected final HttpRequestFactory httpRequestFactory;
 
+    public final ConversationsClient conversations;
+
     public SlackClient(final String token) {
         this.httpRequestFactory = new NetHttpTransport().createRequestFactory(new HttpRequestInitializer() {
             @Override
@@ -31,6 +35,7 @@ public class SlackClient {
                 request.getHeaders().setAuthorization("Bearer " + token);
             }
         });
+        this.conversations = new ConversationsClient(this);
     }
 
     public HttpRequestFactory request() {

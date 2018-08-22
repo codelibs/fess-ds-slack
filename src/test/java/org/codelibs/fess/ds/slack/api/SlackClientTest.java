@@ -15,6 +15,9 @@
  */
 package org.codelibs.fess.ds.slack.api;
 
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
+import org.codelibs.fess.ds.slack.api.type.Channel;
+import org.codelibs.fess.ds.slack.api.type.Message;
 import org.dbflute.utflute.lastadi.ContainerTestCase;
 
 public class SlackClientTest extends ContainerTestCase {
@@ -45,6 +48,27 @@ public class SlackClientTest extends ContainerTestCase {
 
     protected void doProductionTest() {
         final SlackClient client = new SlackClient("");
+        doConversationsListTest(client);
+        doConversationsHistoryTest(client);
+    }
+
+    protected void doConversationsListTest(final SlackClient client) {
+        System.out.println("----------ConversationsList----------");
+        System.out.println("Channels: ");
+        for (final Channel channel : client.conversations.list().limit(5).execute().getChannels()) {
+            System.out.println("#" + channel.getName());
+        }
+    }
+
+    protected void doConversationsHistoryTest(final SlackClient client) {
+        System.out.println("----------ConversationsHistory----------");
+        final Channel channel = client.conversations.list().limit(1).execute().getChannels().get(0);
+        System.out.println("History of #" + channel.getName());
+        final ConversationsHistoryResponse response = client.conversations.history(channel.getId()).count(5).execute();
+        for (final Message message : response.getMessages()) {
+            System.out.println(message.getUser() + ": " + message.getText());
+        }
+        System.out.println("next_cursor: " + response.getNextCursor());
     }
 
 }

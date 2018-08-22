@@ -13,24 +13,24 @@
  * either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-package org.codelibs.fess.ds.slack.api;
+package org.codelibs.fess.ds.slack.api.method.conversations;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import org.codelibs.fess.ds.slack.api.SlackClient;
 
-public abstract class Response {
+public class ConversationsClient {
 
-    @JsonProperty("ok")
-    protected Boolean ok;
+    protected final SlackClient client;
 
-    @JsonProperty("error")
-    protected String error;
-
-    public Boolean ok() {
-        return ok;
+    public ConversationsClient(final SlackClient client) {
+        this.client = client;
     }
 
-    public String getError() {
-        return error;
+    public ConversationsListRequest list() {
+        return new ConversationsListRequest(client);
+    }
+
+    public ConversationsHistoryRequest history(final String channel) {
+        return new ConversationsHistoryRequest(client, channel);
     }
 
 }
