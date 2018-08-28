@@ -15,26 +15,18 @@
  */
 package org.codelibs.fess.ds.slack.api.method.conversations;
 
-import org.codelibs.fess.ds.slack.api.SlackClient;
+import org.codelibs.fess.ds.slack.api.Response;
+import org.codelibs.fess.ds.slack.api.type.Channel;
 
-public class ConversationsClient {
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
-    protected final SlackClient client;
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class ConversationsInfoResponse extends Response {
 
-    public ConversationsClient(final SlackClient client) {
-        this.client = client;
-    }
+    protected Channel channel;
 
-    public ConversationsListRequest list() {
-        return new ConversationsListRequest(client);
-    }
-
-    public ConversationsHistoryRequest history(final String channel) {
-        return new ConversationsHistoryRequest(client, channel);
-    }
-
-    public ConversationsInfoRequest info(final String channel) {
-        return new ConversationsInfoRequest(client, channel);
+    public Channel getChannel() {
+        return channel;
     }
 
 }

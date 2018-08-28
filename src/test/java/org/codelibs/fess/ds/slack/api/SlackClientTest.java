@@ -50,6 +50,7 @@ public class SlackClientTest extends ContainerTestCase {
         final SlackClient client = new SlackClient("");
         doConversationsListTest(client);
         doConversationsHistoryTest(client);
+        doConversationsInfoTest(client);
     }
 
     protected void doConversationsListTest(final SlackClient client) {
@@ -69,6 +70,14 @@ public class SlackClientTest extends ContainerTestCase {
             System.out.println(message.getUser() + ": " + message.getText());
         }
         System.out.println("next_cursor: " + response.getNextCursor());
+    }
+
+    protected void doConversationsInfoTest(final SlackClient client) {
+        System.out.println("----------ConversationsInfo----------");
+        final String id = client.conversations.list().limit(1).execute().getChannels().get(0).getId();
+        System.out.println("Channel: " + id);
+        final Channel channel = client.conversations.info(id).execute().getChannel();
+        System.out.println("#" + channel.getName());
     }
 
 }
