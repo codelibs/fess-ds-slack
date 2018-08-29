@@ -18,6 +18,7 @@ package org.codelibs.fess.ds.slack.api;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
 import org.codelibs.fess.ds.slack.api.method.files.FilesListResponse;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
+import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
@@ -59,6 +60,7 @@ public class SlackClientTest extends ContainerTestCase {
         doUsersInfoTest(client);
         doFilesListTest(client);
         doFilesInfoTest(client);
+        doBotsInfoTest(client, "");
     }
 
     protected void doConversationsListTest(final SlackClient client) {
@@ -121,6 +123,13 @@ public class SlackClientTest extends ContainerTestCase {
         System.out.println("File: " + id);
         final File file = client.files.info(id).execute().getFile();
         System.out.println(file.getName() + "  " + file.getMimetype());
+    }
+
+    protected void doBotsInfoTest(final SlackClient client, final String id) {
+        System.out.println("----------BotsInfo----------");
+        System.out.println("Bot: " + id);
+        final Bot bot = client.bots.info().bot(id).execute().getBot();
+        System.out.println(bot.getName());
     }
 
 }
