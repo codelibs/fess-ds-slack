@@ -13,39 +13,24 @@
  * either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-package org.codelibs.fess.ds.slack.api.type;
+package org.codelibs.fess.ds.slack.api.method.files;
 
-import java.util.List;
+import org.codelibs.fess.ds.slack.api.SlackClient;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+public class FilesClient {
 
-@JsonIgnoreProperties(ignoreUnknown = true)
-public class Message {
+    protected final SlackClient client;
 
-    protected String type;
-    protected String ts;
-    protected String user;
-    protected String text;
-    protected List<File> files;
-
-    public String getType() {
-        return type;
+    public FilesClient(final SlackClient client) {
+        this.client = client;
     }
 
-    public String getTs() {
-        return ts;
+    public FilesListRequest list() {
+        return new FilesListRequest(client);
     }
 
-    public String getUser() {
-        return user;
-    }
-
-    public String getText() {
-        return text;
-    }
-
-    public List<File> getFiles() {
-        return files;
+    public FilesInfoRequest info(final String file) {
+        return new FilesInfoRequest(client, file);
     }
 
 }

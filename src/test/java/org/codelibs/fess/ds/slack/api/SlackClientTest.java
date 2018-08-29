@@ -16,8 +16,10 @@
 package org.codelibs.fess.ds.slack.api;
 
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
+import org.codelibs.fess.ds.slack.api.method.files.FilesListResponse;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
 import org.codelibs.fess.ds.slack.api.type.Channel;
+import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.dbflute.utflute.lastadi.ContainerTestCase;
@@ -55,6 +57,8 @@ public class SlackClientTest extends ContainerTestCase {
         doConversationsInfoTest(client);
         doUsersListTest(client);
         doUsersInfoTest(client);
+        doFilesListTest(client);
+        doFilesInfoTest(client);
     }
 
     protected void doConversationsListTest(final SlackClient client) {
@@ -100,6 +104,23 @@ public class SlackClientTest extends ContainerTestCase {
         System.out.println("User: " + id);
         final User user = client.users.info(id).execute().getUser();
         System.out.println(user.getProfile().getDisplayName());
+    }
+
+    protected void doFilesListTest(final SlackClient client) {
+        System.out.println("----------FilesList----------");
+        System.out.println("Files: ");
+        final FilesListResponse response = client.files.list().count(5).execute();
+        for (final File file : response.getFiles()) {
+            System.out.println(file.getName() + "  " + file.getMimetype());
+        }
+    }
+
+    protected void doFilesInfoTest(final SlackClient client) {
+        System.out.println("----------FilesInfo----------");
+        final String id = client.files.list().count(1).execute().getFiles().get(0).getId();
+        System.out.println("File: " + id);
+        final File file = client.files.info(id).execute().getFile();
+        System.out.println(file.getName() + "  " + file.getMimetype());
     }
 
 }

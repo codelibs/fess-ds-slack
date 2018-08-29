@@ -16,6 +16,7 @@
 package org.codelibs.fess.ds.slack.api;
 
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsClient;
+import org.codelibs.fess.ds.slack.api.method.files.FilesClient;
 import org.codelibs.fess.ds.slack.api.method.users.UsersClient;
 
 import com.google.api.client.http.HttpRequest;
@@ -29,6 +30,7 @@ public class SlackClient {
 
     public final ConversationsClient conversations;
     public final UsersClient users;
+    public final FilesClient files;
 
     public SlackClient(final String token) {
         this.httpRequestFactory = new NetHttpTransport().createRequestFactory(new HttpRequestInitializer() {
@@ -39,6 +41,7 @@ public class SlackClient {
         });
         this.conversations = new ConversationsClient(this);
         this.users = new UsersClient(this);
+        this.files = new FilesClient(this);
     }
 
     public HttpRequestFactory request() {
