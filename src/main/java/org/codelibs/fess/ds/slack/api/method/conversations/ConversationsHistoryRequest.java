@@ -30,9 +30,9 @@ import com.google.api.client.http.HttpResponse;
 public class ConversationsHistoryRequest extends Request<ConversationsHistoryResponse> {
 
     protected final String channel;
+    protected String cursor, latest, oldest;
     protected Integer count;
     protected Boolean inclusive;
-    protected String latest, oldest;
 
     public ConversationsHistoryRequest(final SlackClient client, final String channel) {
         super(client);
@@ -42,7 +42,7 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
     @Override
     public ConversationsHistoryResponse execute() {
         final StringBuilder result = new StringBuilder();
-        final GenericUrl url = buildUrl(client.endpoint(), channel, count, inclusive, latest, oldest);
+        final GenericUrl url = buildUrl(client.endpoint(), channel, cursor, count, inclusive, latest, oldest);
         try {
             final HttpRequest request = client.request().buildGetRequest(url);
             final HttpResponse response = request.execute();
@@ -60,6 +60,11 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
         } catch (final IOException e) {
             throw new SlackDataStoreException("Failed to parse: \"" + json + "\"", e);
         }
+    }
+
+    public ConversationsHistoryRequest cursor(final String cursor) {
+        this.cursor = cursor;
+        return this;
     }
 
     public ConversationsHistoryRequest count(final Integer count) {
@@ -82,11 +87,14 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
         return this;
     }
 
-    protected GenericUrl buildUrl(final String endpoint, final String channel, final Integer count, final Boolean inclusive,
-            final String latest, final String oldest) {
+    protected GenericUrl buildUrl(final String endpoint, final String channel, final String cursor, final Integer count,
+            final Boolean inclusive, final String latest, final String oldest) {
         final GenericUrl url = new GenericUrl(endpoint + "conversations.history");
         if (channel != null) {
             url.put("channel", channel);
+        }
+        if (cursor != null) {
+            url.put("cursor", cursor);
         }
         if (count != null) {
             url.put("count", count);
