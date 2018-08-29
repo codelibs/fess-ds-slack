@@ -16,8 +16,10 @@
 package org.codelibs.fess.ds.slack.api;
 
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
+import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.Message;
+import org.codelibs.fess.ds.slack.api.type.User;
 import org.dbflute.utflute.lastadi.ContainerTestCase;
 
 public class SlackClientTest extends ContainerTestCase {
@@ -51,6 +53,8 @@ public class SlackClientTest extends ContainerTestCase {
         doConversationsListTest(client);
         doConversationsHistoryTest(client);
         doConversationsInfoTest(client);
+        doUsersListTest(client);
+        doUsersInfoTest(client);
     }
 
     protected void doConversationsListTest(final SlackClient client) {
@@ -78,6 +82,24 @@ public class SlackClientTest extends ContainerTestCase {
         System.out.println("Channel: " + id);
         final Channel channel = client.conversations.info(id).execute().getChannel();
         System.out.println("#" + channel.getName());
+    }
+
+    protected void doUsersListTest(final SlackClient client) {
+        System.out.println("----------UsersList----------");
+        System.out.println("Users: ");
+        final UsersListResponse response = client.users.list().limit(5).execute();
+        for (final User user : response.getMembers()) {
+            System.out.println(user.getProfile().getDisplayName());
+        }
+        System.out.println("next_cursor: " + response.getNextCursor());
+    }
+
+    protected void doUsersInfoTest(final SlackClient client) {
+        System.out.println("----------UsersInfo----------");
+        final String id = client.users.list().limit(1).execute().getMembers().get(0).getId();
+        System.out.println("User: " + id);
+        final User user = client.users.info(id).execute().getUser();
+        System.out.println(user.getProfile().getDisplayName());
     }
 
 }
