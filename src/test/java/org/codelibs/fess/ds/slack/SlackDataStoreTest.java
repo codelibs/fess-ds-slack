@@ -15,7 +15,12 @@
  */
 package org.codelibs.fess.ds.slack;
 
-import org.codelibs.fess.ds.slack.SlackDataStore;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.codelibs.fess.ds.callback.IndexUpdateCallback;
+import org.codelibs.fess.es.config.exentity.DataConfig;
+import org.codelibs.fess.mylasta.direction.FessConfig;
 import org.codelibs.fess.util.ComponentUtil;
 import org.dbflute.utflute.lastadi.ContainerTestCase;
 
@@ -45,9 +50,45 @@ public class SlackDataStoreTest extends ContainerTestCase {
         super.tearDown();
     }
 
-    public void test_xxx() {
-        // TODO
-        assertTrue(true);
+    public void test_storeData() {
+        // doStoreDataTest();
+    }
+
+    protected void doStoreDataTest() {
+
+        final DataConfig dataConfig = new DataConfig();
+        final IndexUpdateCallback callback = new IndexUpdateCallback() {
+            @Override
+            public void store(Map<String, String> paramMap, Map<String, Object> dataMap) {
+                System.out.println(dataMap);
+            }
+
+            @Override
+            public long getExecuteTime() {
+                return 0;
+            }
+
+            @Override
+            public long getDocumentSize() {
+                return 0;
+            }
+
+            @Override
+            public void commit() {
+            }
+        };
+        final Map<String, String> paramMap = new HashMap<>();
+        paramMap.put("token", "");
+        final Map<String, String> scriptMap = new HashMap<>();
+        final Map<String, Object> defaultDataMap = new HashMap<>();
+
+        final FessConfig fessConfig = ComponentUtil.getFessConfig();
+        scriptMap.put(fessConfig.getIndexFieldTitle(), "message.user");
+        scriptMap.put(fessConfig.getIndexFieldContent(), "message.text");
+        scriptMap.put(fessConfig.getIndexFieldTimestamp(), "message.timestamp");
+
+        dataStore.storeData(dataConfig, callback, paramMap, scriptMap, defaultDataMap);
+
     }
 
 }

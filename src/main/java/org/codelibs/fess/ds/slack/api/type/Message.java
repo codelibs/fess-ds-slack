@@ -18,6 +18,7 @@ package org.codelibs.fess.ds.slack.api.type;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Message {
@@ -26,6 +27,13 @@ public class Message {
     protected String ts;
     protected String user;
     protected String text;
+    protected String subtype;
+    protected String username;
+    protected String permalink;
+
+    @JsonProperty("bot_id")
+    protected String botId;
+
     protected List<File> files;
 
     public String getType() {
@@ -42,6 +50,22 @@ public class Message {
 
     public String getText() {
         return text;
+    }
+
+    public String getSubtype() {
+        return subtype;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public String getPermalink() {
+        return permalink;
+    }
+
+    public String getBotId() {
+        return botId;
     }
 
     public List<File> getFiles() {
