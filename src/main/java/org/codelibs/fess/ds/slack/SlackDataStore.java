@@ -15,9 +15,11 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.codelibs.core.lang.StringUtil;
@@ -42,15 +44,20 @@ public class SlackDataStore extends AbstractDataStore {
 
     // parameters
     protected static final String TOKEN_PARAM = "token";
+    protected static final String CHANNELS_PARAM = "channels";
+    protected static final String CHANNELS_ALL = "*all";
+    protected static final String CHANNELS_SEPARATOR = ",";
 
     // scripts
     protected static final String MESSAGE = "message";
     protected static final String MESSAGE_TEXT = "text";
     protected static final String MESSAGE_TIMESTAMP = "timestamp";
     protected static final String MESSAGE_USER = "user";
+    protected static final String MESSAGE_CHANNEL = "channel";
 
     protected final Map<String, User> usersMap = new HashMap<>();
     protected final Map<String, Bot> botsMap = new HashMap<>();
+    protected final Map<String, Channel> channelsMap = new HashMap<>();
 
     protected String getName() {
         return "Slack";
@@ -67,6 +74,7 @@ public class SlackDataStore extends AbstractDataStore {
 
         final SlackClient client = new SlackClient(token);
         initUsersMap(client);
+        initChannelsMap(client);
         storeMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client);
     }
 
@@ -79,6 +87,7 @@ public class SlackDataStore extends AbstractDataStore {
             }
             for (final User user : response.getMembers()) {
                 usersMap.put(user.getId(), user);
+                usersMap.put(user.getName(), user);
             }
             final String nextCursor = response.getNextCursor();
             if (nextCursor.isEmpty()) {
@@ -88,8 +97,7 @@ public class SlackDataStore extends AbstractDataStore {
         }
     }
 
-    protected void storeMessages(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, String> paramMap,
-            final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap, final SlackClient client) {
+    protected void initChannelsMap(final SlackClient client) {
         ConversationsListResponse response = client.conversations.list().limit(100).execute();
         while (true) {
             if (!response.ok()) {
@@ -97,13 +105,21 @@ public class SlackDataStore extends AbstractDataStore {
                 return;
             }
             for (final Channel channel : response.getChannels()) {
-                processChannelMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, channel);
+                channelsMap.put(channel.getId(), channel);
+                channelsMap.put(channel.getName(), channel);
             }
             final String nextCursor = response.getNextCursor();
             if (nextCursor.isEmpty()) {
                 break;
             }
             response = client.conversations.list().limit(100).cursor(nextCursor).execute();
+        }
+    }
+
+    protected void storeMessages(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, String> paramMap,
+            final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap, final SlackClient client) {
+        for (final Channel channel : getChannels(paramMap)) {
+            processChannelMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, channel);
         }
     }
 
@@ -139,6 +155,7 @@ public class SlackDataStore extends AbstractDataStore {
             messageMap.put(MESSAGE_TEXT, getMessageText(client, message));
             messageMap.put(MESSAGE_TIMESTAMP, getMessageTimestamp(message));
             messageMap.put(MESSAGE_USER, getMessageUser(client, message));
+            messageMap.put(MESSAGE_CHANNEL, channel.getName());
             resultMap.put(MESSAGE, messageMap);
 
             for (final Map.Entry<String, String> entry : scriptMap.entrySet()) {
@@ -180,11 +197,25 @@ public class SlackDataStore extends AbstractDataStore {
         return user.getProfile().getRealName();
     }
 
-    protected static String getToken(final Map<String, String> paramMap) {
+    protected String getToken(final Map<String, String> paramMap) {
         if (paramMap.containsKey(TOKEN_PARAM)) {
             return paramMap.get(TOKEN_PARAM);
         }
         return StringUtil.EMPTY;
+    }
+
+    protected List<Channel> getChannels(final Map<String, String> paramMap) {
+        final List<Channel> channels = new ArrayList<>();
+        if (!paramMap.containsKey(CHANNELS_PARAM) || paramMap.get(CHANNELS_PARAM).equals(CHANNELS_ALL)) {
+            channels.addAll(channelsMap.values());
+        } else {
+            for (final String name : paramMap.get(CHANNELS_PARAM).split(CHANNELS_SEPARATOR)) {
+                if (channelsMap.containsKey(name)) {
+                    channels.add(channelsMap.get(name));
+                }
+            }
+        }
+        return channels;
     }
 
 }

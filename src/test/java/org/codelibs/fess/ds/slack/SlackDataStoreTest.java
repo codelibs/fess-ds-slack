@@ -79,11 +79,12 @@ public class SlackDataStoreTest extends ContainerTestCase {
         };
         final Map<String, String> paramMap = new HashMap<>();
         paramMap.put("token", "");
+        paramMap.put("channels", "");
         final Map<String, String> scriptMap = new HashMap<>();
         final Map<String, Object> defaultDataMap = new HashMap<>();
 
         final FessConfig fessConfig = ComponentUtil.getFessConfig();
-        scriptMap.put(fessConfig.getIndexFieldTitle(), "message.user");
+        scriptMap.put(fessConfig.getIndexFieldTitle(), "message.user + \" #\" + message.channel");
         scriptMap.put(fessConfig.getIndexFieldContent(), "message.text");
         scriptMap.put(fessConfig.getIndexFieldTimestamp(), "message.timestamp");
 
