@@ -37,4 +37,8 @@ public class ConversationsClient {
         return new ConversationsInfoRequest(client, channel);
     }
 
+    public ConversationsRepliesRequest replies(final String channel, final String ts) {
+        return new ConversationsRepliesRequest(client, channel, ts);
+    }
+
 }

@@ -15,7 +15,10 @@
  */
 package org.codelibs.fess.ds.slack.api;
 
+import java.util.List;
+
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesResponse;
 import org.codelibs.fess.ds.slack.api.method.files.FilesListResponse;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
 import org.codelibs.fess.ds.slack.api.type.Bot;
@@ -62,6 +65,7 @@ public class SlackClientTest extends ContainerTestCase {
         doFilesInfoTest(client);
         // doBotsInfoTest(client, "");
         // doChatGetPermalinkTest(client, "", "");
+        // doConversationsRepliesTest(client, "", "");
     }
 
     protected void doConversationsListTest(final SlackClient client) {
@@ -89,6 +93,16 @@ public class SlackClientTest extends ContainerTestCase {
         System.out.println("Channel: " + id);
         final Channel channel = client.conversations.info(id).execute().getChannel();
         System.out.println("#" + channel.getName());
+    }
+
+    protected void doConversationsRepliesTest(final SlackClient client, final String channel, final String ts) {
+        System.out.println("----------ConversationsReplies----------");
+        final ConversationsRepliesResponse response = client.conversations.replies(channel, ts).execute();
+        final List<Message> messages = response.getMessages();
+        for (int i = 1; i < messages.size(); i++) {
+            System.out.println(messages.get(i).getUser() + ": " + messages.get(i).getText());
+        }
+        System.out.println("hasMore: " + response.hasMore());
     }
 
     protected void doUsersListTest(final SlackClient client) {
