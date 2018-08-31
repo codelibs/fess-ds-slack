@@ -129,7 +129,7 @@ public class SlackDataStore extends AbstractDataStore {
     protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
             final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final SlackClient client, final Channel channel) {
-        ConversationsHistoryResponse response = client.conversations.history(channel.getId()).count(1000).execute();
+        ConversationsHistoryResponse response = client.conversations.history(channel.getId()).limit(1000).execute();
         while (true) {
             if (!response.ok()) {
                 logger.warn("Slack API error occured on \"conversations.history\": " + response.getError());
@@ -141,7 +141,7 @@ public class SlackDataStore extends AbstractDataStore {
             if (!response.hasMore()) {
                 break;
             }
-            response = client.conversations.history(channel.getId()).count(1000).cursor(response.getNextCursor()).execute();
+            response = client.conversations.history(channel.getId()).limit(1000).cursor(response.getNextCursor()).execute();
         }
     }
 
@@ -200,7 +200,7 @@ public class SlackDataStore extends AbstractDataStore {
         if (user == null) {
             usersMap.put(message.getUser(), user = client.users.info(message.getUser()).execute().getUser());
         }
-        return user.getProfile().getRealName();
+        return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName() : user.getProfile().getRealName();
     }
 
     protected String getMessagePermalink(final SlackClient client, final Channel channel, final Message message) {

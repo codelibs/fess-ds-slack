@@ -31,7 +31,7 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
 
     protected final String channel;
     protected String cursor, latest, oldest;
-    protected Integer count;
+    protected Integer limit;
     protected Boolean inclusive;
 
     public ConversationsHistoryRequest(final SlackClient client, final String channel) {
@@ -42,7 +42,7 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
     @Override
     public ConversationsHistoryResponse execute() {
         final StringBuilder result = new StringBuilder();
-        final GenericUrl url = buildUrl(client.endpoint(), channel, cursor, count, inclusive, latest, oldest);
+        final GenericUrl url = buildUrl(client.endpoint(), channel, cursor, inclusive, latest, limit, oldest);
         try {
             final HttpRequest request = client.request().buildGetRequest(url);
             final HttpResponse response = request.execute();
@@ -67,11 +67,6 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
         return this;
     }
 
-    public ConversationsHistoryRequest count(final Integer count) {
-        this.count = count;
-        return this;
-    }
-
     public ConversationsHistoryRequest inclusive(final Boolean inclusive) {
         this.inclusive = inclusive;
         return this;
@@ -82,13 +77,18 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
         return this;
     }
 
+    public ConversationsHistoryRequest limit(final Integer limit) {
+        this.limit = limit;
+        return this;
+    }
+
     public ConversationsHistoryRequest oldest(final String oldest) {
         this.oldest = oldest;
         return this;
     }
 
-    protected GenericUrl buildUrl(final String endpoint, final String channel, final String cursor, final Integer count,
-            final Boolean inclusive, final String latest, final String oldest) {
+    protected GenericUrl buildUrl(final String endpoint, final String channel, final String cursor, final Boolean inclusive,
+            final String latest, final Integer limit, final String oldest) {
         final GenericUrl url = new GenericUrl(endpoint + "conversations.history");
         if (channel != null) {
             url.put("channel", channel);
@@ -96,14 +96,14 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
         if (cursor != null) {
             url.put("cursor", cursor);
         }
-        if (count != null) {
-            url.put("count", count);
-        }
         if (inclusive != null) {
             url.put("inclusive", inclusive);
         }
         if (latest != null) {
             url.put("latest", latest);
+        }
+        if (limit != null) {
+            url.put("limit", limit);
         }
         if (oldest != null) {
             url.put("oldest", oldest);

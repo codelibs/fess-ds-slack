@@ -76,11 +76,11 @@ public class SlackClientTest extends ContainerTestCase {
         System.out.println("----------ConversationsHistory----------");
         final Channel channel = client.conversations.list().limit(1).execute().getChannels().get(0);
         System.out.println("History of #" + channel.getName());
-        final ConversationsHistoryResponse response = client.conversations.history(channel.getId()).count(5).execute();
+        final ConversationsHistoryResponse response = client.conversations.history(channel.getId()).limit(5).execute();
         for (final Message message : response.getMessages()) {
             System.out.println(message.getUser() + ": " + message.getText());
         }
-        System.out.println("next_cursor: " + response.getNextCursor());
+        System.out.println("hasMore: " + response.hasMore());
     }
 
     protected void doConversationsInfoTest(final SlackClient client) {
