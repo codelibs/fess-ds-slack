@@ -47,6 +47,8 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String CHANNELS_PARAM = "channels";
     protected static final String CHANNELS_ALL = "*all";
     protected static final String CHANNELS_SEPARATOR = ",";
+    protected static final String GET_PERMALINK_PARAM = "get_permalink";
+    protected static final String GET_PERMALINK_TRUE = "true";
 
     // scripts
     protected static final String MESSAGE = "message";
@@ -54,6 +56,7 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String MESSAGE_TIMESTAMP = "timestamp";
     protected static final String MESSAGE_USER = "user";
     protected static final String MESSAGE_CHANNEL = "channel";
+    protected static final String MESSAGE_PERMALINK = "permalink";
 
     protected final Map<String, User> usersMap = new HashMap<>();
     protected final Map<String, Bot> botsMap = new HashMap<>();
@@ -156,6 +159,9 @@ public class SlackDataStore extends AbstractDataStore {
             messageMap.put(MESSAGE_TIMESTAMP, getMessageTimestamp(message));
             messageMap.put(MESSAGE_USER, getMessageUser(client, message));
             messageMap.put(MESSAGE_CHANNEL, channel.getName());
+            if (getPermalink(paramMap)) {
+                messageMap.put(MESSAGE_PERMALINK, getMessagePermalink(client, channel, message));
+            }
             resultMap.put(MESSAGE, messageMap);
 
             for (final Map.Entry<String, String> entry : scriptMap.entrySet()) {
@@ -197,6 +203,11 @@ public class SlackDataStore extends AbstractDataStore {
         return user.getProfile().getRealName();
     }
 
+    protected String getMessagePermalink(final SlackClient client, final Channel channel, final Message message) {
+        final String permalink = message.getPermalink();
+        return permalink != null ? permalink : client.chat.getPermalink(channel.getId(), message.getTs()).execute().getPermalink();
+    }
+
     protected String getToken(final Map<String, String> paramMap) {
         if (paramMap.containsKey(TOKEN_PARAM)) {
             return paramMap.get(TOKEN_PARAM);
@@ -216,6 +227,13 @@ public class SlackDataStore extends AbstractDataStore {
             }
         }
         return channels;
+    }
+
+    protected Boolean getPermalink(final Map<String, String> paramMap) {
+        if (paramMap.containsKey(GET_PERMALINK_PARAM)) {
+            return paramMap.get(GET_PERMALINK_PARAM).equals(GET_PERMALINK_TRUE);
+        }
+        return false;
     }
 
 }
