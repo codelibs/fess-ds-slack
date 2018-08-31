@@ -39,6 +39,9 @@ public class Message {
 
     protected List<File> files;
 
+    @JsonProperty("is_thread_broadcast")
+    protected Boolean isThreadBroadcast;
+
     public String getType() {
         return type;
     }
@@ -77,6 +80,10 @@ public class Message {
 
     public List<File> getFiles() {
         return files;
+    }
+
+    public Boolean isThreadBroadcast() {
+        return isThreadBroadcast != null ? isThreadBroadcast : false;
     }
 
 }

@@ -160,6 +160,9 @@ public class SlackDataStore extends AbstractDataStore {
             }
             final List<Message> messages = response.getMessages();
             for (int i = 1; i < messages.size(); i++) {
+                if (message.isThreadBroadcast()) {
+                    continue;
+                }
                 processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, channel, messages.get(i));
             }
             if (!response.hasMore()) {
