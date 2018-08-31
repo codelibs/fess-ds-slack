@@ -42,6 +42,8 @@ public class Message {
     @JsonProperty("is_thread_broadcast")
     protected Boolean isThreadBroadcast;
 
+    protected Comment comment;
+
     public String getType() {
         return type;
     }
@@ -84,6 +86,10 @@ public class Message {
 
     public Boolean isThreadBroadcast() {
         return isThreadBroadcast != null ? isThreadBroadcast : false;
+    }
+
+    public Comment getComment() {
+        return comment;
     }
 
 }

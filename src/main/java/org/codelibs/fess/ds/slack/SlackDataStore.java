@@ -217,12 +217,20 @@ public class SlackDataStore extends AbstractDataStore {
         if (message.getUsername() != null) {
             return message.getUsername();
         }
-        if (message.getSubtype() != null && message.getSubtype().equals("bot_message")) {
-            Bot bot = botsMap.get(message.getBotId());
-            if (bot == null) {
-                botsMap.put(message.getBotId(), bot = client.bots.info().bot(message.getBotId()).execute().getBot());
+        if (message.getSubtype() != null) {
+            if (message.getSubtype().equals("bot_message")) {
+                Bot bot = botsMap.get(message.getBotId());
+                if (bot == null) {
+                    botsMap.put(message.getBotId(), bot = client.bots.info().bot(message.getBotId()).execute().getBot());
+                }
+                return bot.getName();
+            } else if (message.getSubtype().equals("file_comment")) {
+                User user = usersMap.get(message.getComment().getUser());
+                if (user == null) {
+                    usersMap.put(message.getUser(), user = client.users.info(message.getComment().getUser()).execute().getUser());
+                }
+                return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName() : user.getProfile().getRealName();
             }
-            return bot.getName();
         }
         User user = usersMap.get(message.getUser());
         if (user == null) {
