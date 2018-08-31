@@ -60,7 +60,8 @@ public class SlackClientTest extends ContainerTestCase {
         doUsersInfoTest(client);
         doFilesListTest(client);
         doFilesInfoTest(client);
-        doBotsInfoTest(client, "");
+        // doBotsInfoTest(client, "");
+        // doChatGetPermalinkTest(client, "", "");
     }
 
     protected void doConversationsListTest(final SlackClient client) {
@@ -130,6 +131,13 @@ public class SlackClientTest extends ContainerTestCase {
         System.out.println("Bot: " + id);
         final Bot bot = client.bots.info().bot(id).execute().getBot();
         System.out.println(bot.getName());
+    }
+
+    protected void doChatGetPermalinkTest(final SlackClient client, final String channel, final String ts) {
+        System.out.println("----------ChatGetPermalink----------");
+        System.out.println("Channel: " + channel + ", Timestamp: " + ts);
+        final String link = client.chat.getPermalink(channel, ts).execute().getPermalink();
+        System.out.println(link);
     }
 
 }
