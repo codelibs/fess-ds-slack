@@ -34,6 +34,9 @@ public class Message {
     @JsonProperty("bot_id")
     protected String botId;
 
+    @JsonProperty("thread_ts")
+    protected String threadTs;
+
     protected List<File> files;
 
     public String getType() {
@@ -66,6 +69,10 @@ public class Message {
 
     public String getBotId() {
         return botId;
+    }
+
+    public String getThreadTs() {
+        return threadTs;
     }
 
     public List<File> getFiles() {

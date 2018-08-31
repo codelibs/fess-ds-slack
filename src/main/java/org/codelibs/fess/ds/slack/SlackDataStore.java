@@ -29,6 +29,7 @@ import org.codelibs.fess.ds.callback.IndexUpdateCallback;
 import org.codelibs.fess.ds.slack.api.SlackClient;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListResponse;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesResponse;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
 import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
@@ -137,11 +138,35 @@ public class SlackDataStore extends AbstractDataStore {
             }
             for (final Message message : response.getMessages()) {
                 processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, channel, message);
+                if (message.getThreadTs() != null) {
+                    processMessageReplies(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, channel, message);
+                }
             }
             if (!response.hasMore()) {
                 break;
             }
             response = client.conversations.history(channel.getId()).limit(1000).cursor(response.getNextCursor()).execute();
+        }
+    }
+
+    protected void processMessageReplies(final DataConfig dataConfig, final IndexUpdateCallback callback,
+            final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
+            final SlackClient client, final Channel channel, final Message message) {
+        ConversationsRepliesResponse response = client.conversations.replies(channel.getId(), message.getThreadTs()).limit(1000).execute();
+        while (true) {
+            if (!response.ok()) {
+                logger.warn("Slack API error occured on \"conversations.replies\": " + response.getError());
+                return;
+            }
+            final List<Message> messages = response.getMessages();
+            for (int i = 1; i < messages.size(); i++) {
+                processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, channel, messages.get(i));
+            }
+            if (!response.hasMore()) {
+                break;
+            }
+            response = client.conversations.replies(channel.getId(), message.getThreadTs()).limit(1000).cursor(response.getNextCursor())
+                    .execute();
         }
     }
 
