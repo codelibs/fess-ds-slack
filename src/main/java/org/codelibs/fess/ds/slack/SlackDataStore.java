@@ -34,6 +34,7 @@ import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
 import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.Message;
+import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.codelibs.fess.es.config.exentity.DataConfig;
 import org.slf4j.Logger;
@@ -48,8 +49,6 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String CHANNELS_PARAM = "channels";
     protected static final String CHANNELS_ALL = "*all";
     protected static final String CHANNELS_SEPARATOR = ",";
-    protected static final String GET_PERMALINK_PARAM = "get_permalink";
-    protected static final String GET_PERMALINK_TRUE = "true";
 
     // scripts
     protected static final String MESSAGE = "message";
@@ -77,9 +76,10 @@ public class SlackDataStore extends AbstractDataStore {
         }
 
         final SlackClient client = new SlackClient(token);
+        final Team team = client.team.info().execute().getTeam();
         initUsersMap(client);
         initChannelsMap(client);
-        storeMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client);
+        storeMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team);
     }
 
     protected void initUsersMap(final SlackClient client) {
@@ -121,15 +121,15 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     protected void storeMessages(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, String> paramMap,
-            final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap, final SlackClient client) {
+            final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap, final SlackClient client, final Team team) {
         for (final Channel channel : getChannels(paramMap)) {
-            processChannelMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, channel);
+            processChannelMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel);
         }
     }
 
     protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
             final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-            final SlackClient client, final Channel channel) {
+            final SlackClient client, final Team team, final Channel channel) {
         ConversationsHistoryResponse response = client.conversations.history(channel.getId()).limit(1000).execute();
         while (true) {
             if (!response.ok()) {
@@ -137,9 +137,9 @@ public class SlackDataStore extends AbstractDataStore {
                 return;
             }
             for (final Message message : response.getMessages()) {
-                processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, channel, message);
+                processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
                 if (message.getThreadTs() != null) {
-                    processMessageReplies(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, channel, message);
+                    processMessageReplies(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
                 }
             }
             if (!response.hasMore()) {
@@ -151,7 +151,7 @@ public class SlackDataStore extends AbstractDataStore {
 
     protected void processMessageReplies(final DataConfig dataConfig, final IndexUpdateCallback callback,
             final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-            final SlackClient client, final Channel channel, final Message message) {
+            final SlackClient client, final Team team, final Channel channel, final Message message) {
         ConversationsRepliesResponse response = client.conversations.replies(channel.getId(), message.getThreadTs()).limit(1000).execute();
         while (true) {
             if (!response.ok()) {
@@ -163,7 +163,7 @@ public class SlackDataStore extends AbstractDataStore {
                 if (message.isThreadBroadcast()) {
                     continue;
                 }
-                processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, channel, messages.get(i));
+                processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, messages.get(i));
             }
             if (!response.hasMore()) {
                 break;
@@ -174,8 +174,8 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     protected void processMessage(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, String> paramMap,
-            final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap, final SlackClient client, final Channel channel,
-            final Message message) {
+            final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap, final SlackClient client, final Team team,
+            final Channel channel, final Message message) {
         final Map<String, Object> dataMap = new HashMap<>();
         dataMap.putAll(defaultDataMap);
         final Map<String, Object> resultMap = new LinkedHashMap<>();
@@ -187,9 +187,7 @@ public class SlackDataStore extends AbstractDataStore {
             messageMap.put(MESSAGE_TIMESTAMP, getMessageTimestamp(message));
             messageMap.put(MESSAGE_USER, getMessageUser(client, message));
             messageMap.put(MESSAGE_CHANNEL, channel.getName());
-            if (getPermalink(paramMap)) {
-                messageMap.put(MESSAGE_PERMALINK, getMessagePermalink(client, channel, message));
-            }
+            messageMap.put(MESSAGE_PERMALINK, getMessagePermalink(client, team, channel, message));
             resultMap.put(MESSAGE, messageMap);
 
             for (final Map.Entry<String, String> entry : scriptMap.entrySet()) {
@@ -239,9 +237,17 @@ public class SlackDataStore extends AbstractDataStore {
         return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName() : user.getProfile().getRealName();
     }
 
-    protected String getMessagePermalink(final SlackClient client, final Channel channel, final Message message) {
-        final String permalink = message.getPermalink();
-        return permalink != null ? permalink : client.chat.getPermalink(channel.getId(), message.getTs()).execute().getPermalink();
+    protected String getMessagePermalink(final SlackClient client, final Team team, final Channel channel, final Message message) {
+        String permalink = message.getPermalink();
+        if (permalink == null) {
+            if (team == null) {
+                permalink = client.chat.getPermalink(channel.getId(), message.getTs()).execute().getPermalink();
+            } else {
+                permalink =
+                        "https://" + team.getDomain() + ".slack.com/archives/" + channel.getId() + "/p" + message.getTs().replace(".", "");
+            }
+        }
+        return permalink;
     }
 
     protected String getToken(final Map<String, String> paramMap) {
@@ -263,13 +269,6 @@ public class SlackDataStore extends AbstractDataStore {
             }
         }
         return channels;
-    }
-
-    protected Boolean getPermalink(final Map<String, String> paramMap) {
-        if (paramMap.containsKey(GET_PERMALINK_PARAM)) {
-            return paramMap.get(GET_PERMALINK_PARAM).equals(GET_PERMALINK_TRUE);
-        }
-        return false;
     }
 
 }

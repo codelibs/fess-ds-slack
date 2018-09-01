@@ -80,7 +80,6 @@ public class SlackDataStoreTest extends ContainerTestCase {
         final Map<String, String> paramMap = new HashMap<>();
         paramMap.put("token", "");
         paramMap.put("channels", "");
-        paramMap.put("get_permalink", "");
         final Map<String, String> scriptMap = new HashMap<>();
         final Map<String, Object> defaultDataMap = new HashMap<>();
 
