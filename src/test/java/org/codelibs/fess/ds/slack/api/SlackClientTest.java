@@ -25,6 +25,7 @@ import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
+import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.dbflute.utflute.lastadi.ContainerTestCase;
 
@@ -66,6 +67,7 @@ public class SlackClientTest extends ContainerTestCase {
         // doBotsInfoTest(client, "");
         // doChatGetPermalinkTest(client, "", "");
         // doConversationsRepliesTest(client, "", "");
+        doTeamInfoTest(client);
     }
 
     protected void doConversationsListTest(final SlackClient client) {
@@ -152,6 +154,13 @@ public class SlackClientTest extends ContainerTestCase {
         System.out.println("Channel: " + channel + ", Timestamp: " + ts);
         final String link = client.chat.getPermalink(channel, ts).execute().getPermalink();
         System.out.println(link);
+    }
+
+    protected void doTeamInfoTest(final SlackClient client) {
+        System.out.println("----------TeamInfo----------");
+        System.out.println("Team: ");
+        final Team team = client.team.info().execute().getTeam();
+        System.out.println(team.getName() + " https://" + team.getDomain() + ".slack.com/");
     }
 
 }
