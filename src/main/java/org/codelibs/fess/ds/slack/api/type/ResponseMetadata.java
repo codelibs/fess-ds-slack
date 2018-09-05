@@ -13,38 +13,19 @@
  * either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-package org.codelibs.fess.ds.slack.api.method.conversations;
-
-import java.util.List;
-
-import org.codelibs.fess.ds.slack.api.Response;
-import org.codelibs.fess.ds.slack.api.type.Message;
-import org.codelibs.fess.ds.slack.api.type.ResponseMetadata;
+package org.codelibs.fess.ds.slack.api.type;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class ConversationsRepliesResponse extends Response {
+public class ResponseMetadata {
 
-    protected List<Message> messages;
+    @JsonProperty("next_cursor")
+    protected String nextCursor;
 
-    @JsonProperty("response_metadata")
-    protected ResponseMetadata responseMetadata;
-
-    @JsonProperty("has_more")
-    protected Boolean hasMore;
-
-    public List<Message> getMessages() {
-        return messages;
-    }
-
-    public ResponseMetadata getResponseMetadata() {
-        return responseMetadata;
-    }
-
-    public Boolean hasMore() {
-        return hasMore;
+    public String getNextCursor() {
+        return nextCursor;
     }
 
 }

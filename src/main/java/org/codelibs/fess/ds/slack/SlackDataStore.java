@@ -93,7 +93,7 @@ public class SlackDataStore extends AbstractDataStore {
                 usersMap.put(user.getId(), user);
                 usersMap.put(user.getName(), user);
             }
-            final String nextCursor = response.getNextCursor();
+            final String nextCursor = response.getResponseMetadata().getNextCursor();
             if (nextCursor.isEmpty()) {
                 break;
             }
@@ -112,7 +112,7 @@ public class SlackDataStore extends AbstractDataStore {
                 channelsMap.put(channel.getId(), channel);
                 channelsMap.put(channel.getName(), channel);
             }
-            final String nextCursor = response.getNextCursor();
+            final String nextCursor = response.getResponseMetadata().getNextCursor();
             if (nextCursor.isEmpty()) {
                 break;
             }
@@ -145,7 +145,8 @@ public class SlackDataStore extends AbstractDataStore {
             if (!response.hasMore()) {
                 break;
             }
-            response = client.conversations.history(channel.getId()).limit(1000).cursor(response.getNextCursor()).execute();
+            response = client.conversations.history(channel.getId()).limit(1000).cursor(response.getResponseMetadata().getNextCursor())
+                    .execute();
         }
     }
 
@@ -168,8 +169,8 @@ public class SlackDataStore extends AbstractDataStore {
             if (!response.hasMore()) {
                 break;
             }
-            response = client.conversations.replies(channel.getId(), message.getThreadTs()).limit(1000).cursor(response.getNextCursor())
-                    .execute();
+            response = client.conversations.replies(channel.getId(), message.getThreadTs()).limit(1000)
+                    .cursor(response.getResponseMetadata().getNextCursor()).execute();
         }
     }
 

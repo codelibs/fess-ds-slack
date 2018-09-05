@@ -16,7 +16,6 @@
 package org.codelibs.fess.ds.slack.api.method.files;
 
 import java.util.List;
-import java.util.Map;
 
 import org.codelibs.fess.ds.slack.api.Response;
 import org.codelibs.fess.ds.slack.api.type.File;
@@ -28,14 +27,38 @@ public class FilesListResponse extends Response {
 
     protected List<File> files;
 
-    protected Map<String, Integer> paging;
+    protected Paging paging;
 
     public List<File> getFiles() {
         return files;
     }
 
-    public Map<String, Integer> getPaging() {
+    public Paging getPaging() {
         return paging;
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class Paging {
+        protected Integer count;
+        protected Integer total;
+        protected Integer page;
+        protected Integer pages;
+
+        public Integer getCount() {
+            return count;
+        }
+
+        public Integer getTotal() {
+            return total;
+        }
+
+        public Integer getPage() {
+            return page;
+        }
+
+        public Integer getPages() {
+            return pages;
+        }
     }
 
 }

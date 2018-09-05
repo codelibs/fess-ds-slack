@@ -114,7 +114,7 @@ public class SlackClientTest extends ContainerTestCase {
         for (final User user : response.getMembers()) {
             System.out.println(user.getProfile().getDisplayName());
         }
-        System.out.println("next_cursor: " + response.getNextCursor());
+        System.out.println("next_cursor: " + response.getResponseMetadata().getNextCursor());
     }
 
     protected void doUsersInfoTest(final SlackClient client) {
@@ -132,6 +132,7 @@ public class SlackClientTest extends ContainerTestCase {
         for (final File file : response.getFiles()) {
             System.out.println(file.getName() + "  " + file.getMimetype());
         }
+        System.out.println("count: " + response.getPaging().getCount());
     }
 
     protected void doFilesInfoTest(final SlackClient client) {

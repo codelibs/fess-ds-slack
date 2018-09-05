@@ -16,10 +16,10 @@
 package org.codelibs.fess.ds.slack.api.method.conversations;
 
 import java.util.List;
-import java.util.Map;
 
 import org.codelibs.fess.ds.slack.api.Response;
 import org.codelibs.fess.ds.slack.api.type.Channel;
+import org.codelibs.fess.ds.slack.api.type.ResponseMetadata;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -30,18 +30,14 @@ public class ConversationsListResponse extends Response {
     protected List<Channel> channels;
 
     @JsonProperty("response_metadata")
-    protected Map<String, Object> responseMetadata;
+    protected ResponseMetadata responseMetadata;
 
     public List<Channel> getChannels() {
         return channels;
     }
 
-    public Map<String, Object> getResponseMetadata() {
+    public ResponseMetadata getResponseMetadata() {
         return responseMetadata;
-    }
-
-    public String getNextCursor() {
-        return (String) responseMetadata.get("next_cursor");
     }
 
 }

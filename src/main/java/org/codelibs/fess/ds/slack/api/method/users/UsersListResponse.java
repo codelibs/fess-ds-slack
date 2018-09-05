@@ -16,9 +16,9 @@
 package org.codelibs.fess.ds.slack.api.method.users;
 
 import java.util.List;
-import java.util.Map;
 
 import org.codelibs.fess.ds.slack.api.Response;
+import org.codelibs.fess.ds.slack.api.type.ResponseMetadata;
 import org.codelibs.fess.ds.slack.api.type.User;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -30,18 +30,14 @@ public class UsersListResponse extends Response {
     protected List<User> members;
 
     @JsonProperty("response_metadata")
-    protected Map<String, Object> responseMetadata;
+    protected ResponseMetadata responseMetadata;
 
     public List<User> getMembers() {
         return members;
     }
 
-    public Map<String, Object> getResponseMetadata() {
+    public ResponseMetadata getResponseMetadata() {
         return responseMetadata;
-    }
-
-    public String getNextCursor() {
-        return (String) responseMetadata.get("next_cursor");
     }
 
 }
