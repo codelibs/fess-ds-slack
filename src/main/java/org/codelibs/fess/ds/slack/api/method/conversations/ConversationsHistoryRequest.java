@@ -15,17 +15,9 @@
  */
 package org.codelibs.fess.ds.slack.api.method.conversations;
 
-import java.io.IOException;
-import java.util.Scanner;
-
-import org.codelibs.fess.ds.slack.SlackDataStoreException;
+import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
 import org.codelibs.fess.ds.slack.api.SlackClient;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.api.client.http.GenericUrl;
-import com.google.api.client.http.HttpRequest;
-import com.google.api.client.http.HttpResponse;
 
 public class ConversationsHistoryRequest extends Request<ConversationsHistoryResponse> {
 
@@ -41,25 +33,7 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
 
     @Override
     public ConversationsHistoryResponse execute() {
-        final StringBuilder result = new StringBuilder();
-        final GenericUrl url = buildUrl(client.endpoint(), channel, cursor, inclusive, latest, limit, oldest);
-        try {
-            final HttpRequest request = client.request().buildGetRequest(url);
-            final HttpResponse response = request.execute();
-            @SuppressWarnings("resource")
-            final Scanner s = new Scanner(response.getContent()).useDelimiter("\\A");
-            result.append(s.hasNext() ? s.next() : "");
-        } catch (final IOException e) {
-            throw new SlackDataStoreException("Failed to request: " + url, e);
-        }
-
-        final String json = result.toString();
-        final ObjectMapper mapper = new ObjectMapper();
-        try {
-            return mapper.readValue(json, ConversationsHistoryResponse.class);
-        } catch (final IOException e) {
-            throw new SlackDataStoreException("Failed to parse: \"" + json + "\"", e);
-        }
+        return parseResponse(request().execute().getContentAsString(), ConversationsHistoryResponse.class);
     }
 
     public ConversationsHistoryRequest cursor(final String cursor) {
@@ -87,28 +61,27 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
         return this;
     }
 
-    protected GenericUrl buildUrl(final String endpoint, final String channel, final String cursor, final Boolean inclusive,
-            final String latest, final Integer limit, final String oldest) {
-        final GenericUrl url = new GenericUrl(endpoint + "conversations.history");
+    private CurlRequest request() {
+        final CurlRequest request = client.request(GET, "conversations.history");
         if (channel != null) {
-            url.put("channel", channel);
+            request.param("channel", channel);
         }
         if (cursor != null) {
-            url.put("cursor", cursor);
+            request.param("cursor", cursor);
         }
         if (inclusive != null) {
-            url.put("inclusive", inclusive);
+            request.param("inclusive", inclusive.toString());
         }
         if (latest != null) {
-            url.put("latest", latest);
+            request.param("latest", latest);
         }
         if (limit != null) {
-            url.put("limit", limit);
+            request.param("limit", limit.toString());
         }
         if (oldest != null) {
-            url.put("oldest", oldest);
+            request.param("oldest", oldest);
         }
-        return url;
+        return request;
     }
 
 }

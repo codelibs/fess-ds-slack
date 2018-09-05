@@ -15,6 +15,9 @@
  */
 package org.codelibs.fess.ds.slack.api;
 
+import java.util.function.Function;
+
+import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsClient;
 import org.codelibs.fess.ds.slack.api.method.chat.ChatClient;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsClient;
@@ -22,14 +25,11 @@ import org.codelibs.fess.ds.slack.api.method.files.FilesClient;
 import org.codelibs.fess.ds.slack.api.method.team.TeamClient;
 import org.codelibs.fess.ds.slack.api.method.users.UsersClient;
 
-import com.google.api.client.http.HttpRequest;
-import com.google.api.client.http.HttpRequestFactory;
-import com.google.api.client.http.HttpRequestInitializer;
-import com.google.api.client.http.javanet.NetHttpTransport;
-
 public class SlackClient {
 
-    protected final HttpRequestFactory httpRequestFactory;
+    public static final String SLACK_API_ENDPOINT = "https://slack.com/api/";
+
+    protected final String token;
 
     public final ConversationsClient conversations;
     public final UsersClient users;
@@ -39,12 +39,7 @@ public class SlackClient {
     public final TeamClient team;
 
     public SlackClient(final String token) {
-        this.httpRequestFactory = new NetHttpTransport().createRequestFactory(new HttpRequestInitializer() {
-            @Override
-            public void initialize(HttpRequest request) {
-                request.getHeaders().setAuthorization("Bearer " + token);
-            }
-        });
+        this.token = token;
         this.conversations = new ConversationsClient(this);
         this.users = new UsersClient(this);
         this.files = new FilesClient(this);
@@ -53,12 +48,13 @@ public class SlackClient {
         this.team = new TeamClient(this);
     }
 
-    public HttpRequestFactory request() {
-        return httpRequestFactory;
-    }
-
-    public String endpoint() {
-        return "https://slack.com/api/";
+    public CurlRequest request(final Function<String, CurlRequest> method, final String path) {
+        final StringBuilder buf = new StringBuilder(100);
+        buf.append(SLACK_API_ENDPOINT);
+        if (path != null) {
+            buf.append(path);
+        }
+        return method.apply(buf.toString()).header("Authorization", "Bearer " + token);
     }
 
 }

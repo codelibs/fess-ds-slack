@@ -15,7 +15,21 @@
  */
 package org.codelibs.fess.ds.slack.api;
 
+import java.io.IOException;
+import java.util.function.Function;
+
+import org.codelibs.curl.Curl;
+import org.codelibs.curl.CurlRequest;
+import org.codelibs.fess.ds.slack.SlackDataStoreException;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 public abstract class Request<T extends Response> {
+
+    public static final Function<String, CurlRequest> GET = Curl::get;
+    public static final Function<String, CurlRequest> POST = Curl::post;
+    public static final Function<String, CurlRequest> PUT = Curl::put;
+    public static final Function<String, CurlRequest> DELETE = Curl::delete;
 
     protected final SlackClient client;
 
@@ -24,5 +38,14 @@ public abstract class Request<T extends Response> {
     }
 
     public abstract T execute();
+
+    protected T parseResponse(final String content, final Class<T> valueType) {
+        final ObjectMapper mapper = new ObjectMapper();
+        try {
+            return mapper.readValue(content, valueType);
+        } catch (final IOException e) {
+            throw new SlackDataStoreException("Failed to parse: \"" + content + "\"", e);
+        }
+    }
 
 }

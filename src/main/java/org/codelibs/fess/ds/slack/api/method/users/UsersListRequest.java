@@ -15,17 +15,9 @@
  */
 package org.codelibs.fess.ds.slack.api.method.users;
 
-import java.io.IOException;
-import java.util.Scanner;
-
-import org.codelibs.fess.ds.slack.SlackDataStoreException;
+import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
 import org.codelibs.fess.ds.slack.api.SlackClient;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.api.client.http.GenericUrl;
-import com.google.api.client.http.HttpRequest;
-import com.google.api.client.http.HttpResponse;
 
 public class UsersListRequest extends Request<UsersListResponse> {
 
@@ -39,24 +31,7 @@ public class UsersListRequest extends Request<UsersListResponse> {
 
     @Override
     public UsersListResponse execute() {
-        final StringBuilder result = new StringBuilder();
-        final GenericUrl url = buildUrl(client.endpoint(), cursor, includeLocale, limit, presence);
-        try {
-            final HttpRequest request = client.request().buildGetRequest(url);
-            final HttpResponse response = request.execute();
-            @SuppressWarnings("resource")
-            final Scanner s = new Scanner(response.getContent()).useDelimiter("\\A");
-            result.append(s.hasNext() ? s.next() : "");
-        } catch (final IOException e) {
-            throw new SlackDataStoreException("Failed to request: " + url, e);
-        }
-        final String json = result.toString();
-        final ObjectMapper mapper = new ObjectMapper();
-        try {
-            return mapper.readValue(json, UsersListResponse.class);
-        } catch (final IOException e) {
-            throw new SlackDataStoreException("Failed to parse: \"" + json + "\"", e);
-        }
+        return parseResponse(request().execute().getContentAsString(), UsersListResponse.class);
     }
 
     public UsersListRequest cursor(final String cursor) {
@@ -79,22 +54,21 @@ public class UsersListRequest extends Request<UsersListResponse> {
         return this;
     }
 
-    protected GenericUrl buildUrl(final String endpoint, final String cursor, final Boolean includeLocale, final Integer limit,
-            final Boolean presence) {
-        final GenericUrl url = new GenericUrl(endpoint + "users.list");
+    private CurlRequest request() {
+        final CurlRequest request = client.request(GET, "users.list");
         if (cursor != null) {
-            url.put("cursor", cursor);
+            request.param("cursor", cursor);
         }
         if (includeLocale != null) {
-            url.put("include_locale", includeLocale);
+            request.param("include_locale", includeLocale.toString());
         }
         if (limit != null) {
-            url.put("limit", limit);
+            request.param("limit", limit.toString());
         }
         if (presence != null) {
-            url.put("presence", presence);
+            request.param("presence", presence.toString());
         }
-        return url;
+        return request;
     }
 
 }

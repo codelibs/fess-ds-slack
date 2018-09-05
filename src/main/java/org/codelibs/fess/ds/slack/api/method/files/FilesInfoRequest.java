@@ -15,17 +15,9 @@
  */
 package org.codelibs.fess.ds.slack.api.method.files;
 
-import java.io.IOException;
-import java.util.Scanner;
-
-import org.codelibs.fess.ds.slack.SlackDataStoreException;
+import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
 import org.codelibs.fess.ds.slack.api.SlackClient;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.api.client.http.GenericUrl;
-import com.google.api.client.http.HttpRequest;
-import com.google.api.client.http.HttpResponse;
 
 public class FilesInfoRequest extends Request<FilesInfoResponse> {
 
@@ -40,24 +32,7 @@ public class FilesInfoRequest extends Request<FilesInfoResponse> {
 
     @Override
     public FilesInfoResponse execute() {
-        final StringBuilder result = new StringBuilder();
-        final GenericUrl url = buildUrl(client.endpoint(), file, count, cursor, limit, page);
-        try {
-            final HttpRequest request = client.request().buildGetRequest(url);
-            final HttpResponse response = request.execute();
-            @SuppressWarnings("resource")
-            final Scanner s = new Scanner(response.getContent()).useDelimiter("\\A");
-            result.append(s.hasNext() ? s.next() : "");
-        } catch (final IOException e) {
-            throw new SlackDataStoreException("Failed to request: " + url, e);
-        }
-        final String json = result.toString();
-        final ObjectMapper mapper = new ObjectMapper();
-        try {
-            return mapper.readValue(json, FilesInfoResponse.class);
-        } catch (final IOException e) {
-            throw new SlackDataStoreException("Failed to parse: \"" + json + "\"", e);
-        }
+        return parseResponse(request().execute().getContentAsString(), FilesInfoResponse.class);
     }
 
     public FilesInfoRequest count(final Integer count) {
@@ -80,25 +55,24 @@ public class FilesInfoRequest extends Request<FilesInfoResponse> {
         return this;
     }
 
-    protected GenericUrl buildUrl(final String endpoint, final String file, final Integer count, final String cursor, final Integer limit,
-            final Integer page) {
-        final GenericUrl url = new GenericUrl(endpoint + "files.info");
+    private CurlRequest request() {
+        final CurlRequest request = client.request(GET, "files.info");
         if (file != null) {
-            url.put("file", file);
+            request.param("file", file);
         }
         if (count != null) {
-            url.put("count", count);
+            request.param("count", count.toString());
         }
         if (cursor != null) {
-            url.put("cursor", cursor);
+            request.param("cursor", cursor);
         }
         if (limit != null) {
-            url.put("limit", limit);
+            request.param("limit", limit.toString());
         }
         if (page != null) {
-            url.put("page", page);
+            request.param("page", page.toString());
         }
-        return url;
+        return request;
     }
 
 }
