@@ -84,10 +84,17 @@ public class SlackDataStoreTest extends ContainerTestCase {
         final Map<String, Object> defaultDataMap = new HashMap<>();
 
         final FessConfig fessConfig = ComponentUtil.getFessConfig();
-        scriptMap.put(fessConfig.getIndexFieldTitle(), "message.user + \" #\" + message.channel");
-        scriptMap.put(fessConfig.getIndexFieldContent(), "message.text + \"\\n\" + message.attachments");
-        scriptMap.put(fessConfig.getIndexFieldCreated(), "message.timestamp");
-        scriptMap.put(fessConfig.getIndexFieldUrl(), "message.permalink");
+        // scriptMap.put(fessConfig.getIndexFieldTitle(), "message.user + \" #\" + message.channel");
+        // scriptMap.put(fessConfig.getIndexFieldContent(), "message.text + \"\\n\" + message.attachments");
+        // scriptMap.put(fessConfig.getIndexFieldCreated(), "message.timestamp");
+        // scriptMap.put(fessConfig.getIndexFieldUrl(), "message.permalink");
+
+        paramMap.put("target", "file");
+        scriptMap.put(fessConfig.getIndexFieldTitle(), "file.title");
+        scriptMap.put(fessConfig.getIndexFieldFilename(), "file.name");
+        scriptMap.put(fessConfig.getIndexFieldCreated(), "file.timestamp");
+        scriptMap.put(fessConfig.getIndexFieldUrl(), "file.url");
+        scriptMap.put(fessConfig.getIndexFieldMimetype(), "file.mimetype");
 
         dataStore.storeData(dataConfig, callback, paramMap, scriptMap, defaultDataMap);
 

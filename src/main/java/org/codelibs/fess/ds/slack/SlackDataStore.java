@@ -31,10 +31,13 @@ import org.codelibs.fess.ds.slack.api.SlackClient;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesResponse;
+import org.codelibs.fess.ds.slack.api.method.files.FilesListResponse;
+import org.codelibs.fess.ds.slack.api.method.users.UsersInfoResponse;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
 import org.codelibs.fess.ds.slack.api.type.Attachment;
 import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
+import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
@@ -51,6 +54,7 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String CHANNELS_PARAM = "channels";
     protected static final String CHANNELS_ALL = "*all";
     protected static final String CHANNELS_SEPARATOR = ",";
+    protected static final String TARGET_PARAM = "target";
 
     // scripts
     protected static final String MESSAGE = "message";
@@ -60,6 +64,17 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String MESSAGE_CHANNEL = "channel";
     protected static final String MESSAGE_PERMALINK = "permalink";
     protected static final String MESSAGE_ATTACHMENTS = "attachments";
+
+    protected static final String FILE = "file";
+    protected static final String FILE_TITLE = "title";
+    protected static final String FILE_NAME = "name";
+    protected static final String FILE_USER = "user";
+    protected static final String FILE_MIMETYPE = "mimetype";
+    protected static final String FILE_FILETYPE = "filetype";
+    protected static final String FILE_URL = "url";
+    protected static final String FILE_PERMALINK = "permalink";
+    protected static final String FILE_TIMESTAMP = "timestamp";
+    protected static final String FILE_THUMBNAIL = "thumbnail";
 
     protected final Map<String, User> usersMap = new HashMap<>();
     protected final Map<String, Bot> botsMap = new HashMap<>();
@@ -82,7 +97,13 @@ public class SlackDataStore extends AbstractDataStore {
         final Team team = client.team.info().execute().getTeam();
         initUsersMap(client);
         initChannelsMap(client);
-        storeMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team);
+
+        final String target = getTarget(paramMap);
+        if (target.equals(MESSAGE)) {
+            storeMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team);
+        } else if (target.equals(FILE)) {
+            storeFiles(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team);
+        }
     }
 
     protected void initUsersMap(final SlackClient client) {
@@ -264,11 +285,77 @@ public class SlackDataStore extends AbstractDataStore {
         return String.join("\n", fallbacks);
     }
 
+    protected void storeFiles(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, String> paramMap,
+            final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap, final SlackClient client, final Team team) {
+        for (final File file : getFiles(client, paramMap)) {
+            processFile(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, file);
+        }
+    }
+
+    protected void processFile(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, String> paramMap,
+            final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap, final SlackClient client, final Team team,
+            final File file) {
+        final Map<String, Object> dataMap = new HashMap<>();
+        dataMap.putAll(defaultDataMap);
+        final Map<String, Object> resultMap = new LinkedHashMap<>();
+        resultMap.putAll(paramMap);
+        final Map<String, Object> fileMap = new HashMap<>();
+
+        try {
+            fileMap.put(FILE_TITLE, file.getTitle());
+            fileMap.put(FILE_NAME, file.getName());
+            fileMap.put(FILE_TIMESTAMP, getFileTimestamp(file));
+            fileMap.put(FILE_USER, getFileUser(client, file));
+            fileMap.put(FILE_MIMETYPE, file.getMimetype());
+            fileMap.put(FILE_FILETYPE, file.getFiletype());
+            fileMap.put(FILE_URL, file.getUrlPrivate());
+            fileMap.put(FILE_PERMALINK, file.getPermalink());
+            fileMap.put(FILE_THUMBNAIL, file.getThumb360());
+            resultMap.put(FILE, fileMap);
+
+            for (final Map.Entry<String, String> entry : scriptMap.entrySet()) {
+                final Object convertValue = convertValue(entry.getValue(), resultMap);
+                if (convertValue != null) {
+                    dataMap.put(entry.getKey(), convertValue);
+                }
+            }
+            callback.store(paramMap, dataMap);
+        } catch (final CrawlingAccessException e) {
+            logger.warn("Crawling Access Exception at : " + dataMap, e);
+        }
+    }
+
+    protected Date getFileTimestamp(final File file) {
+        return new Date(file.getTimestamp() * 1000);
+    }
+
+    protected String getFileUser(final SlackClient client, final File file) {
+        if (file.getUsername() != null) {
+            return file.getUsername();
+        }
+        User user = usersMap.get(file.getUser());
+        if (user == null) {
+            final UsersInfoResponse response = client.users.info(file.getUser()).execute();
+            if (!response.ok()) {
+                return "";
+            }
+            usersMap.put(file.getUser(), user = response.getUser());
+        }
+        return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName() : user.getProfile().getRealName();
+    }
+
     protected String getToken(final Map<String, String> paramMap) {
         if (paramMap.containsKey(TOKEN_PARAM)) {
             return paramMap.get(TOKEN_PARAM);
         }
         return StringUtil.EMPTY;
+    }
+
+    protected String getTarget(final Map<String, String> paramMap) {
+        if (paramMap.containsKey(TARGET_PARAM)) {
+            return paramMap.get(TARGET_PARAM);
+        }
+        return MESSAGE;
     }
 
     protected List<Channel> getChannels(final Map<String, String> paramMap) {
@@ -283,6 +370,42 @@ public class SlackDataStore extends AbstractDataStore {
             }
         }
         return channels;
+    }
+
+    protected List<File> getFiles(final SlackClient client, final Map<String, String> paramMap) {
+        final List<File> files = new ArrayList<>();
+        if (!paramMap.containsKey(CHANNELS_PARAM) || paramMap.get(CHANNELS_PARAM).equals(CHANNELS_ALL)) {
+            FilesListResponse response = client.files.list().count(100).execute();
+            while (true) {
+                if (!response.ok()) {
+                    logger.warn("Slack API error occured on \"files.list\": " + response.getError());
+                    break;
+                }
+                files.addAll(response.getFiles());
+                final Integer nextPage = response.getPaging().getPage() + 1;
+                if (nextPage > response.getPaging().getPages()) {
+                    break;
+                }
+                response = client.files.list().count(100).page(nextPage).execute();
+            }
+        } else {
+            for (final String channel : paramMap.get(CHANNELS_PARAM).split(CHANNELS_SEPARATOR)) {
+                FilesListResponse response = client.files.list().channel(channel).count(100).execute();
+                while (true) {
+                    if (!response.ok()) {
+                        logger.warn("Slack API error occured on \"files.list\": " + response.getError());
+                        break;
+                    }
+                    files.addAll(response.getFiles());
+                    final Integer nextPage = response.getPaging().getPage() + 1;
+                    if (nextPage > response.getPaging().getPages()) {
+                        break;
+                    }
+                    response = client.files.list().channel(channel).count(100).page(nextPage).execute();
+                }
+            }
+        }
+        return files;
     }
 
 }

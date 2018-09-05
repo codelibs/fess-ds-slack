@@ -15,6 +15,8 @@
  */
 package org.codelibs.fess.ds.slack.api.type;
 
+import java.util.List;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -26,7 +28,9 @@ public class File {
     protected String name;
     protected String title;
     protected String mimetype;
+    protected String filetype;
     protected String user;
+    protected String username;
 
     @JsonProperty("url_private")
     protected String urlPrivate;
@@ -50,6 +54,8 @@ public class File {
     @JsonProperty("preview_highlight")
     protected String previewHighlight;
 
+    protected List<String> channels;
+
     public String getId() {
         return id;
     }
@@ -70,8 +76,16 @@ public class File {
         return mimetype;
     }
 
+    public String getFiletype() {
+        return filetype;
+    }
+
     public String getUser() {
         return user;
+    }
+
+    public String getUsername() {
+        return username;
     }
 
     public String getUrlPrivate() {
@@ -104,6 +118,10 @@ public class File {
 
     public String getPreviewHighlight() {
         return previewHighlight;
+    }
+
+    public List<String> getChannels() {
+        return channels;
     }
 
 }
