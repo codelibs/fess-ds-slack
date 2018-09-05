@@ -85,7 +85,7 @@ public class SlackDataStoreTest extends ContainerTestCase {
 
         final FessConfig fessConfig = ComponentUtil.getFessConfig();
         scriptMap.put(fessConfig.getIndexFieldTitle(), "message.user + \" #\" + message.channel");
-        scriptMap.put(fessConfig.getIndexFieldContent(), "message.text");
+        scriptMap.put(fessConfig.getIndexFieldContent(), "message.text + \"\\n\" + message.attachments");
         scriptMap.put(fessConfig.getIndexFieldCreated(), "message.timestamp");
         scriptMap.put(fessConfig.getIndexFieldUrl(), "message.permalink");
 

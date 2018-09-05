@@ -44,6 +44,8 @@ public class Message {
 
     protected Comment comment;
 
+    protected List<Attachment> attachments;
+
     public String getType() {
         return type;
     }
@@ -90,6 +92,10 @@ public class Message {
 
     public Comment getComment() {
         return comment;
+    }
+
+    public List<Attachment> getAttachments() {
+        return attachments;
     }
 
 }

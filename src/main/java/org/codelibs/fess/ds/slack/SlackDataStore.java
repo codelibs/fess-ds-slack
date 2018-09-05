@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.codelibs.core.lang.StringUtil;
 import org.codelibs.fess.crawler.exception.CrawlingAccessException;
@@ -31,6 +32,7 @@ import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryR
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesResponse;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
+import org.codelibs.fess.ds.slack.api.type.Attachment;
 import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.Message;
@@ -57,6 +59,7 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String MESSAGE_USER = "user";
     protected static final String MESSAGE_CHANNEL = "channel";
     protected static final String MESSAGE_PERMALINK = "permalink";
+    protected static final String MESSAGE_ATTACHMENTS = "attachments";
 
     protected final Map<String, User> usersMap = new HashMap<>();
     protected final Map<String, Bot> botsMap = new HashMap<>();
@@ -189,6 +192,7 @@ public class SlackDataStore extends AbstractDataStore {
             messageMap.put(MESSAGE_USER, getMessageUser(client, message));
             messageMap.put(MESSAGE_CHANNEL, channel.getName());
             messageMap.put(MESSAGE_PERMALINK, getMessagePermalink(client, team, channel, message));
+            messageMap.put(MESSAGE_ATTACHMENTS, getMessageAttachmentsText(message));
             resultMap.put(MESSAGE, messageMap);
 
             for (final Map.Entry<String, String> entry : scriptMap.entrySet()) {
@@ -249,6 +253,15 @@ public class SlackDataStore extends AbstractDataStore {
             }
         }
         return permalink;
+    }
+
+    protected String getMessageAttachmentsText(final Message message) {
+        final List<Attachment> attachments = message.getAttachments();
+        if (attachments == null) {
+            return "";
+        }
+        final List<String> fallbacks = attachments.stream().map(attachment -> attachment.getFallback()).collect(Collectors.toList());
+        return String.join("\n", fallbacks);
     }
 
     protected String getToken(final Map<String, String> paramMap) {

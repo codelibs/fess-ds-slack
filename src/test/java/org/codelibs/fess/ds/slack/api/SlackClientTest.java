@@ -30,6 +30,7 @@ import org.codelibs.fess.ds.slack.api.method.team.TeamInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.team.TeamInfoResponse;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListRequest;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
+import org.codelibs.fess.ds.slack.api.type.Attachment;
 import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.File;
@@ -213,6 +214,11 @@ public class SlackClientTest extends ContainerTestCase {
                 "            \"ts\": \"1234567890.000100\"" + //
                 "        }," + //
                 "        {" + //
+                "            \"attachments\": [" + //
+                "                {" + //
+                "                    \"fallback\": \"FALLBACK\"" + //
+                "                }" + //
+                "            ]," + //
                 "            \"files\": [" + //
                 "                {" + //
                 "                    \"id\": \"FILE_ID\"" + //
@@ -233,6 +239,8 @@ public class SlackClientTest extends ContainerTestCase {
         assertEquals(messages.get(0).getUser(), "USER");
         assertEquals(messages.get(0).getText(), "TEXT");
         assertEquals(messages.get(0).getTs(), "1234567890.000100");
+        final Attachment attach = messages.get(1).getAttachments().get(0);
+        assertEquals(attach.getFallback(), "FALLBACK");
         final File file = messages.get(1).getFiles().get(0);
         assertEquals(file.getId(), "FILE_ID");
         assertTrue(response.hasMore());
