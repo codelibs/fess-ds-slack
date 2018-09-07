@@ -21,8 +21,8 @@ import org.codelibs.fess.ds.slack.api.SlackClient;
 
 public class ConversationsListRequest extends Request<ConversationsListResponse> {
 
-    protected String cursor;
-    protected Boolean excludeArchived, types;
+    protected String cursor, types;
+    protected Boolean excludeArchived;
     protected Integer limit;
 
     public ConversationsListRequest(final SlackClient client) {
@@ -44,7 +44,7 @@ public class ConversationsListRequest extends Request<ConversationsListResponse>
         return this;
     }
 
-    public ConversationsListRequest types(final Boolean types) {
+    public ConversationsListRequest types(final String types) {
         this.types = types;
         return this;
     }
@@ -66,7 +66,7 @@ public class ConversationsListRequest extends Request<ConversationsListResponse>
             request.param("limit", limit.toString());
         }
         if (types != null) {
-            request.param("types", types.toString());
+            request.param("types", types);
         }
         return request;
     }
