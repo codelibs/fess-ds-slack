@@ -17,9 +17,18 @@ package org.codelibs.fess.ds.slack.api;
 
 import java.util.List;
 
+import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoResponse;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListRequest;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesResponse;
+import org.codelibs.fess.ds.slack.api.method.files.FilesListRequest;
 import org.codelibs.fess.ds.slack.api.method.files.FilesListResponse;
+import org.codelibs.fess.ds.slack.api.method.team.TeamInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.team.TeamInfoResponse;
+import org.codelibs.fess.ds.slack.api.method.users.UsersListRequest;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
 import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
@@ -51,7 +60,7 @@ public class SlackClientTest extends ContainerTestCase {
         super.tearDown();
     }
 
-    public void test_production() {
+    public void testProduction() {
         // doProductionTest();
     }
 
@@ -162,6 +171,168 @@ public class SlackClientTest extends ContainerTestCase {
         System.out.println("Team: ");
         final Team team = client.team.info().execute().getTeam();
         System.out.println(team.getName() + " https://" + team.getDomain() + ".slack.com/");
+    }
+
+    public void testConversationsList() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"channels\": [" + //
+                "        {" + //
+                "            \"id\": \"CHANNEL_ID0\"," + //
+                "            \"name\": \"CHANNEL_Name0\"" + //
+                "        }," + //
+                "        {" + //
+                "            \"id\": \"CHANNEL_ID1\"," + //
+                "            \"name\": \"CHANNEL_Name1\"" + //
+                "        }" + //
+                "    ]," + //
+                "    \"response_metadata\": {" + //
+                "        \"next_cursor\": \"NEXT_CURSOR\"" + //
+                "    }" + //
+                "}";
+        final ConversationsListResponse response =
+                new ConversationsListRequest(null).parseResponse(content, ConversationsListResponse.class);
+        assertTrue(response.ok());
+        final List<Channel> channels = response.getChannels();
+        for (int i = 0; i < channels.size(); i++) {
+            assertEquals(channels.get(i).getId(), "CHANNEL_ID" + i);
+            assertEquals(channels.get(i).getName(), "CHANNEL_Name" + i);
+        }
+        assertEquals(response.getResponseMetadata().getNextCursor(), "NEXT_CURSOR");
+    }
+
+    public void testConversationsHistory() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"messages\": [" + //
+                "        {" + //
+                "            \"user\": \"USER\"," + //
+                "            \"text\": \"TEXT\"," + //
+                "            \"ts\": \"1234567890.000100\"" + //
+                "        }," + //
+                "        {" + //
+                "            \"files\": [" + //
+                "                {" + //
+                "                    \"id\": \"FILE_ID\"" + //
+                "                }" + //
+                "            ]" + //
+                "        }" + //
+                "    ]," + //
+                "    \"has_more\": true," + //
+                "    \"response_metadata\": {" + //
+                "        \"next_cursor\": \"NEXT_CURSOR\"" + //
+                "    }" + //
+                "}";
+        ;
+        final ConversationsHistoryResponse response =
+                new ConversationsHistoryRequest(null, null).parseResponse(content, ConversationsHistoryResponse.class);
+        assertTrue(response.ok());
+        final List<Message> messages = response.getMessages();
+        assertEquals(messages.get(0).getUser(), "USER");
+        assertEquals(messages.get(0).getText(), "TEXT");
+        assertEquals(messages.get(0).getTs(), "1234567890.000100");
+        final File file = messages.get(1).getFiles().get(0);
+        assertEquals(file.getId(), "FILE_ID");
+        assertTrue(response.hasMore());
+        assertEquals(response.getResponseMetadata().getNextCursor(), "NEXT_CURSOR");
+    }
+
+    public void testUsersList() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"members\": [" + //
+                "        {" + //
+                "            \"id\": \"ID0\"," + //
+                "            \"name\": \"NAME0\"," + //
+                "            \"profile\": {" + //
+                "                \"display_name\": \"DISPLAY_NAME0\"" + //
+                "            }" + //
+                "        }," + //
+                "        {" + //
+                "            \"id\": \"ID1\"," + //
+                "            \"name\": \"NAME1\"," + //
+                "            \"profile\": {" + //
+                "                \"display_name\": \"DISPLAY_NAME1\"" + //
+                "            }" + //
+                "        }" + //
+                "    ]" + //
+                "}";
+        final UsersListResponse response = new UsersListRequest(null).parseResponse(content, UsersListResponse.class);
+        assertTrue(response.ok());
+        final List<User> members = response.getMembers();
+        for (int i = 0; i < members.size(); i++) {
+            assertEquals(members.get(i).getId(), "ID" + i);
+            assertEquals(members.get(i).getName(), "NAME" + i);
+            assertEquals(members.get(i).getProfile().getDisplayName(), "DISPLAY_NAME" + i);
+        }
+    }
+
+    public void testFilesList() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"files\": [" + //
+                "        {" + //
+                "            \"id\": \"FILE_ID0\"," + //
+                "            \"timestamp\": 1234567890," + //
+                "            \"thumb_360\": \"THUMBNAIL0\"" + //
+                "        }," + //
+                "        {" + //
+                "            \"id\": \"FILE_ID1\"," + //
+                "            \"timestamp\": 1234567890," + //
+                "            \"thumb_360\": \"THUMBNAIL1\"" + //
+                "        }" + //
+                "    ]," + //
+                "    \"paging\": {" + //
+                "        \"count\": 2" + //
+                "    }" + //
+                "}";
+        final FilesListResponse response = new FilesListRequest(null).parseResponse(content, FilesListResponse.class);
+        assertTrue(response.ok());
+        final List<File> files = response.getFiles();
+        for (int i = 0; i < files.size(); i++) {
+            assertEquals(files.get(i).getId(), "FILE_ID" + i);
+            assertEquals(files.get(i).getTimestamp(), Long.valueOf(1234567890));
+            assertEquals(files.get(i).getThumb360(), "THUMBNAIL" + i);
+        }
+        assertEquals(response.getPaging().getCount(), Integer.valueOf(2));
+    }
+
+    public void testBotsInfo() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"bot\": {" + //
+                "        \"id\": \"BOT_ID\"," + //
+                "        \"name\": \"BOT_NAME\"" + //
+                "    }" + //
+                "}";
+        final BotsInfoResponse response = new BotsInfoRequest(null).parseResponse(content, BotsInfoResponse.class);
+        assertTrue(response.ok());
+        final Bot bot = response.getBot();
+        assertEquals(bot.getId(), "BOT_ID");
+        assertEquals(bot.getName(), "BOT_NAME");
+    }
+
+    public void testTeamInfo() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"team\": {" + //
+                "        \"id\": \"TEAM_ID\"," + //
+                "        \"name\": \"TEAM_NAME\"," + //
+                "        \"domain\": \"TEAM_DOMAIN\"" + //
+                "    }" + //
+                "}";
+        final TeamInfoResponse response = new TeamInfoRequest(null).parseResponse(content, TeamInfoResponse.class);
+        assertTrue(response.ok());
+        final Team team = response.getTeam();
+        assertEquals(team.getId(), "TEAM_ID");
+        assertEquals(team.getName(), "TEAM_NAME");
+        assertEquals(team.getDomain(), "TEAM_DOMAIN");
     }
 
 }
