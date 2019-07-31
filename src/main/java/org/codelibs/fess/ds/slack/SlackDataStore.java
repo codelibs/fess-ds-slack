@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.codelibs.core.lang.StringUtil;
@@ -139,12 +140,15 @@ public class SlackDataStore extends AbstractDataStore {
                 logger.warn("Slack API error occured on \"conversations.history\": " + response.getError());
                 return;
             }
-            for (final Message message : response.getMessages()) {
-                processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
-                if (message.getThreadTs() != null) {
-                    processMessageReplies(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+            response.getMessages().stream().forEach(new Consumer<Message>() {
+                @Override
+                public void accept(Message message) {
+                    processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+                    if (message.getThreadTs() != null) {
+                        processMessageReplies(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+                    }
                 }
-            }
+            });
             if (!response.hasMore()) {
                 break;
             }
