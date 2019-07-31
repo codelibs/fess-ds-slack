@@ -140,13 +140,10 @@ public class SlackDataStore extends AbstractDataStore {
                 logger.warn("Slack API error occured on \"conversations.history\": " + response.getError());
                 return;
             }
-            response.getMessages().stream().forEach(new Consumer<Message>() {
-                @Override
-                public void accept(Message message) {
-                    processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
-                    if (message.getThreadTs() != null) {
-                        processMessageReplies(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
-                    }
+            response.getMessages().forEach(message -> {
+                processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+                if (message.getThreadTs() != null) {
+                    processMessageReplies(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
                 }
             });
             if (!response.hasMore()) {
