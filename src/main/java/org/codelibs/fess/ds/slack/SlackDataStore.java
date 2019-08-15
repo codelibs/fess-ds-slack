@@ -66,7 +66,7 @@ public class SlackDataStore extends AbstractDataStore {
     protected final Map<String, Channel> channelsMap = new HashMap<>();
 
     protected String getName() {
-        return "Slack";
+        return this.getClass().getSimpleName();
     }
 
     @Override
