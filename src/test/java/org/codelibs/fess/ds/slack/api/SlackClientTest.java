@@ -67,7 +67,7 @@ public class SlackClientTest extends ContainerTestCase {
     }
 
     protected void doProductionTest() {
-        final SlackClient client = new SlackClient("", new HashMap<String, String>());
+        final SlackClient client = new SlackClient(new HashMap<>());
         doConversationsListTest(client);
         doConversationsHistoryTest(client);
         doConversationsInfoTest(client);

@@ -17,6 +17,7 @@ package org.codelibs.fess.ds.slack.api;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -36,6 +37,7 @@ import org.codelibs.fess.ds.slack.api.method.team.TeamClient;
 import org.codelibs.fess.ds.slack.api.method.users.UsersClient;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
 import org.codelibs.fess.ds.slack.api.type.*;
+import org.codelibs.fess.exception.DataStoreException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,24 +56,30 @@ public class SlackClient {
     protected static final String BOT_CACHE_SIZE = "bot_cache_size";
     protected static final String CHANNEL_CACHE_SIZE = "channel_cache_size";
 
-    // TODO : 最大フェッチ数を種類ごとに分ける。
-    protected static final Integer DEFAULT_FETCH_LIMIT = 100;
+    protected static final Integer DEFAULT_CHANNEL_FETCH_LIMIT = 100;
+    protected static final Integer DEFAULT_USER_FETCH_LIMIT = 100;
+    protected static final Integer DEFAULT_MESSAGE_FETCH_LIMIT = 100;
+    protected static final String DEFAULT_CACHE_SIZE = "10000";
 
     protected final String token;
 
-    public final ConversationsClient conversations;
-    public final UsersClient users;
-    public final FilesClient files;
-    public final BotsClient bots;
-    public final ChatClient chat;
-    public final TeamClient team;
+    protected final ConversationsClient conversations;
+    protected final UsersClient users;
+    protected final FilesClient files;
+    protected final BotsClient bots;
+    protected final ChatClient chat;
+    protected final TeamClient team;
     protected Map<String, String> params;
     protected LoadingCache<String, User> usersCache;
     protected LoadingCache<String, Bot> botsCache;
     protected LoadingCache<String, Channel> channelsCache;
 
-    // TODO token is not needed?
-    public SlackClient(final String token, final Map<String, String> params) {
+    public SlackClient(final Map<String, String> params) {
+        final String token = getToken(params);
+        if (token.isEmpty()) {
+            throw new DataStoreException("Parameter " + TOKEN_PARAM + " is required");
+        }
+
         this.params = params;
         this.token = token;
         this.conversations = new ConversationsClient(this);
@@ -80,10 +88,10 @@ public class SlackClient {
         this.bots = new BotsClient(this);
         this.chat = new ChatClient(this);
         this.team = new TeamClient(this);
-        // TODO
+
         usersCache = CacheBuilder
                 .newBuilder()
-                .maximumSize(Integer.parseInt(params.getOrDefault(USER_CACHE_SIZE, "10000")))
+                .maximumSize(Integer.parseInt(params.getOrDefault(USER_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, User>() {
                         @Override
                         public User load(final String key) {
@@ -93,7 +101,7 @@ public class SlackClient {
                 );
         botsCache = CacheBuilder
                 .newBuilder()
-                .maximumSize(Integer.parseInt(params.getOrDefault(BOT_CACHE_SIZE, "10000")))
+                .maximumSize(Integer.parseInt(params.getOrDefault(BOT_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, Bot>() {
                            @Override
                            public Bot load(final String key) {
@@ -103,7 +111,7 @@ public class SlackClient {
                 );
         channelsCache = CacheBuilder
                 .newBuilder()
-                .maximumSize(Integer.parseInt(params.getOrDefault(CHANNEL_CACHE_SIZE, "10000")))
+                .maximumSize(Integer.parseInt(params.getOrDefault(CHANNEL_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, Channel>() {
                            @Override
                            public Channel load(final String key) {
@@ -111,7 +119,6 @@ public class SlackClient {
                            }
                        }
                 );
-        // TODO : Initilization
         getUsers( user -> {
             usersCache.put(user.getId(), user);
             usersCache.put(user.getName(), user);
@@ -122,13 +129,31 @@ public class SlackClient {
         });
     }
 
-    public CurlRequest request(final Function<String, CurlRequest> method, final String path) {
-        final StringBuilder buf = new StringBuilder(100);
-        buf.append(SLACK_API_ENDPOINT);
-        if (path != null) {
-            buf.append(path);
+    protected String getToken(final Map<String, String> paramMap) {
+        if (paramMap.containsKey(TOKEN_PARAM)) {
+            return paramMap.get(TOKEN_PARAM);
         }
-        return method.apply(buf.toString()).header("Authorization", "Bearer " + token);
+        return StringUtil.EMPTY;
+    }
+
+    public Team getTeam() {
+        return team.info().execute().getTeam();
+    }
+
+    public Bot getBot(final String botName) throws ExecutionException {
+        return botsCache.get(botName);
+    }
+
+    public User getUser(final String userName) throws ExecutionException {
+        return usersCache.get(userName);
+    }
+
+    public Channel getChannel(final String channelName) throws ExecutionException {
+        return channelsCache.get(channelName);
+    }
+
+    public String getPermalink(final String channelId, final String threadTs) {
+        return chat.getPermalink(channelId, threadTs).execute().getPermalink();
     }
 
     public void getChannels(final Consumer<Channel> consumer) {
@@ -137,18 +162,16 @@ public class SlackClient {
         } else {
             for (final String name : params.get(CHANNELS_PARAM).split(CHANNELS_SEPARATOR)) {
                 try {
-                    final Channel channel = channelsCache.get(name);
-                    if(channel != null) consumer.accept(channel);
-                } catch (Exception e) {
-                    // TODO
-                    logger.warn("Failed to get a Channel objet.", e);
+                    consumer.accept(getChannel(name));
+                } catch (final Exception e) {
+                    logger.warn("Failed to get a channel.", e);
                 }
             }
         }
     }
 
     public void getAllChannels(final Consumer<Channel> consumer) {
-        getAllChannels(DEFAULT_FETCH_LIMIT, consumer);
+        getAllChannels(DEFAULT_CHANNEL_FETCH_LIMIT, consumer);
     }
 
     public void getAllChannels(final Integer limit, final Consumer<Channel> consumer) {
@@ -168,7 +191,7 @@ public class SlackClient {
     }
 
     public void getChannelMessages(final String channelId, final Consumer<Message> consumer) {
-        getChannelMessages(channelId, DEFAULT_FETCH_LIMIT, consumer);
+        getChannelMessages(channelId, DEFAULT_MESSAGE_FETCH_LIMIT, consumer);
     }
 
     public void getChannelMessages(final String channelId, final Integer limit, final Consumer<Message> consumer) {
@@ -188,7 +211,7 @@ public class SlackClient {
     }
 
     public void getMessageReplies(final String channelId, final String threadTs, final Consumer<Message> consumer) {
-        getMessageReplies(channelId, threadTs, DEFAULT_FETCH_LIMIT, consumer);
+        getMessageReplies(channelId, threadTs, DEFAULT_MESSAGE_FETCH_LIMIT, consumer);
     }
 
     public void getMessageReplies(final String channelId, final String threadTs, final Integer limit, final Consumer<Message> consumer) {
@@ -215,7 +238,7 @@ public class SlackClient {
     }
 
     public void getUsers(final Consumer<User> consumer) {
-        getUsers(DEFAULT_FETCH_LIMIT, consumer);
+        getUsers(DEFAULT_USER_FETCH_LIMIT, consumer);
     }
 
     public void getUsers(final Integer limit, final Consumer<User> consumer) {
@@ -234,51 +257,12 @@ public class SlackClient {
         }
     }
 
-    public String getMessageUsername(final Message message) {
-        if (message.getUsername() != null) {
-            return message.getUsername();
+    public CurlRequest request(final Function<String, CurlRequest> method, final String path) {
+        final StringBuilder buf = new StringBuilder(100);
+        buf.append(SLACK_API_ENDPOINT);
+        if (path != null) {
+            buf.append(path);
         }
-        if (message.getSubtype() != null) {
-            if (message.getSubtype().equals("bot_message")) {
-                try {
-                    final Bot bot = botsCache.get(message.getBotId());
-                    return bot.getName();
-                } catch (final Exception e) {
-                    // TODO
-                    logger.warn("Failed to get a bot name.", e);
-                }
-            } else if (message.getSubtype().equals("file_comment")) {
-                try {
-                    final User user = usersCache.get(message.getComment().getUser());
-                    return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName() : user.getProfile().getRealName();
-                } catch (final Exception e) {
-                    // TODO
-                    logger.warn("Failed to get a user name.", e);
-                }
-            }
-        }
-        try {
-            final User user = usersCache.get(message.getUser());
-            return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName() : user.getProfile().getRealName();
-        } catch (final Exception e) {
-            // TODO
-            logger.warn("Failed to get a user name.", e);
-        }
-        return StringUtil.EMPTY;
+        return method.apply(buf.toString()).header("Authorization", "Bearer " + token);
     }
-
-    public String getMessagePermalink(final Team team, final Channel channel, final Message message) {
-        String permalink = message.getPermalink();
-        if (permalink == null) {
-            if (team == null) {
-                permalink = chat.getPermalink(channel.getId(), message.getTs()).execute().getPermalink();
-            } else {
-                permalink =
-                        "https://" + team.getDomain() + ".slack.com/archives/" + channel.getId() + "/p" + message.getTs().replace(".", "");
-            }
-        }
-        return permalink;
-    }
-
-
 }

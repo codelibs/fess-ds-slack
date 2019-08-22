@@ -31,10 +31,7 @@ import org.codelibs.fess.crawler.exception.CrawlingAccessException;
 import org.codelibs.fess.ds.AbstractDataStore;
 import org.codelibs.fess.ds.callback.IndexUpdateCallback;
 import org.codelibs.fess.ds.slack.api.SlackClient;
-import org.codelibs.fess.ds.slack.api.type.Attachment;
-import org.codelibs.fess.ds.slack.api.type.Channel;
-import org.codelibs.fess.ds.slack.api.type.Message;
-import org.codelibs.fess.ds.slack.api.type.Team;
+import org.codelibs.fess.ds.slack.api.type.*;
 import org.codelibs.fess.es.config.exentity.DataConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,10 +41,6 @@ public class SlackDataStore extends AbstractDataStore {
     private static final Logger logger = LoggerFactory.getLogger(SlackDataStore.class);
 
     // parameters
-    protected static final String TOKEN_PARAM = "token";
-    protected static final String CHANNELS_PARAM = "channels";
-    protected static final String CHANNELS_ALL = "*all";
-    protected static final String CHANNELS_SEPARATOR = ",";
     protected static final String NUMBER_OF_THREADS = "number_of_threads";
 
     // scripts
@@ -67,14 +60,8 @@ public class SlackDataStore extends AbstractDataStore {
     @Override
     protected void storeData(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, String> paramMap,
             final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap) {
-        final String token = getToken(paramMap);
-        if (token.isEmpty()) {
-            logger.warn("parameter \"" + TOKEN_PARAM + "\" is required");
-            return;
-        }
-
-        final SlackClient client = new SlackClient(token, paramMap);
-        final Team team = client.team.info().execute().getTeam();
+        final SlackClient client = new SlackClient(paramMap);
+        final Team team = client.getTeam();
         storeMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team);
     }
 
@@ -142,9 +129,9 @@ public class SlackDataStore extends AbstractDataStore {
         try {
             messageMap.put(MESSAGE_TEXT, getMessageText(message));
             messageMap.put(MESSAGE_TIMESTAMP, getMessageTimestamp(message));
-            messageMap.put(MESSAGE_USER, client.getMessageUsername(message));
+            messageMap.put(MESSAGE_USER, getMessageUsername(client, message));
             messageMap.put(MESSAGE_CHANNEL, channel.getName());
-            messageMap.put(MESSAGE_PERMALINK, client.getMessagePermalink(team, channel, message));
+            messageMap.put(MESSAGE_PERMALINK, getMessagePermalink(client, team, channel, message));
             messageMap.put(MESSAGE_ATTACHMENTS, getMessageAttachmentsText(message));
             resultMap.put(MESSAGE, messageMap);
 
@@ -169,6 +156,30 @@ public class SlackDataStore extends AbstractDataStore {
         return new Date(Math.round(Double.parseDouble(message.getTs()) * 1000));
     }
 
+    public String getMessageUsername(final SlackClient client, final Message message) {
+        if (message.getUsername() != null) {
+            return message.getUsername();
+        }
+        try {
+            if (message.getSubtype() != null) {
+                if (message.getSubtype().equals("bot_message")) {
+                    return client.getBot(message.getBotId()).getName();
+                } else if (message.getSubtype().equals("file_comment")) {
+                    final User user = client.getUser(message.getComment().getUser());
+                    return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName() : user.getProfile().getRealName();
+                }
+            }
+            final User user = client.getUser(message.getUsername());
+            return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName() : user.getProfile().getRealName();
+        } catch(final Exception e) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Failed to get a username from message.", e);
+            }
+            return StringUtil.EMPTY;
+        }
+    }
+
+
     protected String getMessageAttachmentsText(final Message message) {
         final List<Attachment> attachments = message.getAttachments();
         if (attachments == null) {
@@ -178,11 +189,17 @@ public class SlackDataStore extends AbstractDataStore {
         return String.join("\n", fallbacks);
     }
 
-    protected String getToken(final Map<String, String> paramMap) {
-        if (paramMap.containsKey(TOKEN_PARAM)) {
-            return paramMap.get(TOKEN_PARAM);
+    public String getMessagePermalink(final SlackClient client, final Team team, final Channel channel, final Message message) {
+        String permalink = message.getPermalink();
+        if (permalink == null) {
+            if (team == null) {
+                permalink = client.getPermalink(channel.getId(), message.getTs());
+            } else {
+                permalink =
+                        "https://" + team.getDomain() + ".slack.com/archives/" + channel.getId() + "/p" + message.getTs().replace(".", "");
+            }
         }
-        return StringUtil.EMPTY;
+        return permalink;
     }
 
 }
