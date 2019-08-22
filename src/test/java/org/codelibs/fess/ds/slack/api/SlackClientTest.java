@@ -15,6 +15,7 @@
  */
 package org.codelibs.fess.ds.slack.api;
 
+import java.util.HashMap;
 import java.util.List;
 
 import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoRequest;
@@ -66,7 +67,7 @@ public class SlackClientTest extends ContainerTestCase {
     }
 
     protected void doProductionTest() {
-        final SlackClient client = new SlackClient("");
+        final SlackClient client = new SlackClient("", new HashMap<String, String>());
         doConversationsListTest(client);
         doConversationsHistoryTest(client);
         doConversationsInfoTest(client);
