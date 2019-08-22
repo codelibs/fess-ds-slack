@@ -91,8 +91,7 @@ public class SlackDataStore extends AbstractDataStore {
         final ExecutorService executorService = newFixedThreadPool(Integer.parseInt(paramMap.getOrDefault(NUMBER_OF_THREADS, "1")));
         try {
             client.getChannels(channel -> {
-                executorService
-                        .execute(() -> processChannelMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel));
+                processChannelMessages(dataConfig, callback, paramMap, scriptMap, defaultDataMap, executorService, client, team, channel);
             });
 
             if (logger.isDebugEnabled()) {
@@ -111,13 +110,16 @@ public class SlackDataStore extends AbstractDataStore {
 
     protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
             final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-            final SlackClient client, final Team team, final Channel channel) {
+                                          final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel) {
         client.getChannelMessages(channel.getId(), message -> {
-            processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
-            if (message.getThreadTs() != null) {
-                processMessageReplies(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
-            }
-        });
+                    executorService.execute(() -> {
+                        processMessage(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+                        if (message.getThreadTs() != null) {
+                            processMessageReplies(dataConfig, callback, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+                        }
+                    });
+                }
+            );
     }
 
     protected void processMessageReplies(final DataConfig dataConfig, final IndexUpdateCallback callback,
