@@ -15,6 +15,8 @@
  */
 package org.codelibs.fess.ds.slack.api;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -25,6 +27,7 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import org.codelibs.core.lang.StringUtil;
+import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsClient;
 import org.codelibs.fess.ds.slack.api.method.chat.ChatClient;
@@ -33,11 +36,13 @@ import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryR
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesResponse;
 import org.codelibs.fess.ds.slack.api.method.files.FilesClient;
+import org.codelibs.fess.ds.slack.api.method.files.FilesListResponse;
 import org.codelibs.fess.ds.slack.api.method.team.TeamClient;
 import org.codelibs.fess.ds.slack.api.method.users.UsersClient;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
 import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
+import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
@@ -63,6 +68,7 @@ public class SlackClient {
     protected static final Integer DEFAULT_CHANNEL_FETCH_LIMIT = 100;
     protected static final Integer DEFAULT_USER_FETCH_LIMIT = 100;
     protected static final Integer DEFAULT_MESSAGE_FETCH_LIMIT = 100;
+    protected static final Integer DEFAULT_FILE_FETCH_COUNT = 20;
     protected static final String DEFAULT_CACHE_SIZE = "10000";
 
     protected final String token;
@@ -160,6 +166,13 @@ public class SlackClient {
         return chat.getPermalink(channelId, threadTs).execute().getPermalink();
     }
 
+    public InputStream getFileContent(final String fileUrl) throws IOException {
+        // TODO
+        return Curl.get(fileUrl).header("Authorization", "Bearer " + token)
+                .header("Content-type", "application/x-www-form-urlencoded")
+                .param("token", token).execute().getContentAsStream();
+    }
+
     public void getChannels(final Consumer<Channel> consumer) {
         if (!params.containsKey(CHANNELS_PARAM) || params.get(CHANNELS_PARAM).equals(CHANNELS_ALL)) {
             getAllChannels(consumer);
@@ -171,6 +184,26 @@ public class SlackClient {
                     logger.warn("Failed to get a channel.", e);
                 }
             }
+        }
+    }
+
+    public void getChannelFiles(final String channelId, final Consumer<File> consumer) {
+        getChannelFiles(channelId, DEFAULT_FILE_FETCH_COUNT, consumer);
+    }
+
+    public void getChannelFiles(final String channelId, final Integer count, final Consumer<File> consumer) {
+        FilesListResponse response = files.list().channel(channelId).count(count).execute();
+        while (true) {
+            logger.info("We are processing files!!! : " + response.getFiles());
+            if (!response.ok()) {
+                logger.warn("Slack API error occured on \"files.list\": " + response.getError());
+                return;
+            }
+            response.getFiles().forEach(consumer);
+            if (response.getPaging().getPage() >= response.getPaging().getTotal()) {
+                break;
+            }
+            response = files.list().channel(channelId).count(count).page(response.getPaging().getPage() + 1).execute();
         }
     }
 

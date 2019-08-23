@@ -27,6 +27,7 @@ public class File {
     protected String title;
     protected String mimetype;
     protected String user;
+    protected Long size;
 
     @JsonProperty("url_private")
     protected String urlPrivate;
@@ -72,6 +73,10 @@ public class File {
 
     public String getUser() {
         return user;
+    }
+
+    public Long getSize() {
+        return size;
     }
 
     public String getUrlPrivate() {
