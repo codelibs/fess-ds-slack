@@ -129,6 +129,7 @@ public class SlackClient {
                            }
                        }
                 );
+        // Initialize these caches to avoid exceeding the rate limit of the Slack API
         getUsers( user -> {
             usersCache.put(user.getId(), user);
             usersCache.put(user.getName(), user);
