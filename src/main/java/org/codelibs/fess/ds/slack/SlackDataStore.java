@@ -106,7 +106,7 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     protected void initChannelsMap(final SlackClient client) {
-        ConversationsListResponse response = client.conversations.list().limit(100).execute();
+        ConversationsListResponse response = client.conversations.list().types("public_channel,private_channel").limit(100).execute();
         while (true) {
             if (!response.ok()) {
                 logger.warn("Slack API error occured on \"conversations.list\": " + response.getError());
@@ -120,7 +120,7 @@ public class SlackDataStore extends AbstractDataStore {
             if (nextCursor.isEmpty()) {
                 break;
             }
-            response = client.conversations.list().limit(100).cursor(nextCursor).execute();
+            response = client.conversations.list().types("public_channel,private_channel").limit(100).cursor(nextCursor).execute();
         }
     }
 
