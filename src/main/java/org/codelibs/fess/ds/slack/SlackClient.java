@@ -213,7 +213,7 @@ public class SlackClient {
     }
 
     public void getAllChannels(final Integer limit, final Consumer<Channel> consumer) {
-        ConversationsListResponse response = conversations.list().limit(limit).execute();
+        ConversationsListResponse response = conversations.list().types("public_channel,private_channel").limit(limit).execute();
         while (true) {
             if (!response.ok()) {
                 logger.warn("Slack API error occured on \"conversations.list\": " + response.getError());
@@ -224,7 +224,7 @@ public class SlackClient {
             if (nextCursor.isEmpty()) {
                 break;
             }
-            response = conversations.list().limit(limit).cursor(nextCursor).execute();
+            response = conversations.list().types("public_channel,private_channel").limit(limit).cursor(nextCursor).execute();
         }
     }
 
