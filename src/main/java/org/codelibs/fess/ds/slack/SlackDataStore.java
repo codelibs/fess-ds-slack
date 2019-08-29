@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2018 CodeLibs Project and the Others.
+ * Copyright 2012-2019 CodeLibs Project and the Others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,7 +36,6 @@ import org.codelibs.fess.crawler.exception.MultipleCrawlingAccessException;
 import org.codelibs.fess.crawler.extractor.Extractor;
 import org.codelibs.fess.ds.AbstractDataStore;
 import org.codelibs.fess.ds.callback.IndexUpdateCallback;
-import org.codelibs.fess.ds.slack.api.SlackClient;
 import org.codelibs.fess.ds.slack.api.type.Attachment;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.File;
@@ -186,7 +185,7 @@ public class SlackDataStore extends AbstractDataStore {
 
         try {
             final String messageText = getMessageText(message);
-            messageMap.put(MESSAGE_TITLE, messageText); // TODO
+            messageMap.put(MESSAGE_TITLE, messageText);
             messageMap.put(MESSAGE_TEXT, messageText);
             messageMap.put(MESSAGE_TIMESTAMP, getMessageTimestamp(message));
             messageMap.put(MESSAGE_USER, getMessageUsername(client, message));
@@ -233,19 +232,8 @@ public class SlackDataStore extends AbstractDataStore {
             fileMap.put(MESSAGE_USER, file.getUser());
             fileMap.put(MESSAGE_CHANNEL, channel.getName());
             fileMap.put(MESSAGE_PERMALINK, file.getPermalink());
-            fileMap.put(MESSAGE_ATTACHMENTS, "");
+            fileMap.put(MESSAGE_ATTACHMENTS, StringUtil.EMPTY);
             resultMap.put(MESSAGE, fileMap);
-            /*
-            fileMap.put(FILE_CONTENTS, getFileContent(client, file, ignoreError));
-            fileMap.put(FILE_MIMETYPE, mimetype);
-            fileMap.put(FILE_FILETYPE, filetype);
-            fileMap.put(FILE_CREATED, file.getTimestamp());
-            fileMap.put(FILE_ID, file.getId());
-            fileMap.put(FILE_SIZE, file.getSize());
-            fileMap.put(FILE_PERMALINK, file.getPermalink());
-            resultMap.put("file", fileMap); // TODO deprecated
-            resultMap.put(FILE, fileMap);
-             */
 
             if (logger.isDebugEnabled()) {
                 logger.debug("fileMap: {}", fileMap);
@@ -292,7 +280,7 @@ public class SlackDataStore extends AbstractDataStore {
 
     protected String getMessageText(final Message message) {
         final String text = message.getText();
-        return text != null ? text : "";
+        return text != null ? text : StringUtil.EMPTY;
     }
 
     protected Date getMessageTimestamp(final Message message) {
@@ -329,7 +317,7 @@ public class SlackDataStore extends AbstractDataStore {
     protected String getMessageAttachmentsText(final Message message) {
         final List<Attachment> attachments = message.getAttachments();
         if (attachments == null) {
-            return "";
+            return StringUtil.EMPTY;
         }
         final List<String> fallbacks = attachments.stream().map(Attachment::getFallback).collect(Collectors.toList());
         return String.join("\n", fallbacks);
@@ -342,7 +330,7 @@ public class SlackDataStore extends AbstractDataStore {
                 permalink = client.getPermalink(channel.getId(), message.getTs());
             } else {
                 permalink =
-                        "https://" + team.getDomain() + ".slack.com/archives/" + channel.getId() + "/p" + message.getTs().replace(".", "");
+                        "https://" + team.getDomain() + ".slack.com/archives/" + channel.getId() + "/p" + message.getTs().replace(".", StringUtil.EMPTY);
             }
         }
         return permalink;
