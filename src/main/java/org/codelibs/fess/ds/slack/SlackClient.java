@@ -26,7 +26,6 @@ import java.util.function.Function;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import org.codelibs.core.lang.StringUtil;
 import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsClient;
@@ -144,7 +143,7 @@ public class SlackClient {
         if (paramMap.containsKey(TOKEN_PARAM)) {
             return paramMap.get(TOKEN_PARAM);
         }
-        return StringUtil.EMPTY;
+        return "";
     }
 
     public Team getTeam() {

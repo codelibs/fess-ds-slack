@@ -232,7 +232,7 @@ public class SlackDataStore extends AbstractDataStore {
             fileMap.put(MESSAGE_USER, file.getUser());
             fileMap.put(MESSAGE_CHANNEL, channel.getName());
             fileMap.put(MESSAGE_PERMALINK, file.getPermalink());
-            fileMap.put(MESSAGE_ATTACHMENTS, StringUtil.EMPTY);
+            fileMap.put(MESSAGE_ATTACHMENTS, "");
             resultMap.put(MESSAGE, fileMap);
 
             if (logger.isDebugEnabled()) {
@@ -280,7 +280,7 @@ public class SlackDataStore extends AbstractDataStore {
 
     protected String getMessageText(final Message message) {
         final String text = message.getText();
-        return text != null ? text : StringUtil.EMPTY;
+        return text != null ? text : "";
     }
 
     protected Date getMessageTimestamp(final Message message) {
@@ -310,14 +310,14 @@ public class SlackDataStore extends AbstractDataStore {
             if (logger.isDebugEnabled()) {
                 logger.debug("Failed to get a username from message.", e);
             }
-            return StringUtil.EMPTY;
+            return "";
         }
     }
 
     protected String getMessageAttachmentsText(final Message message) {
         final List<Attachment> attachments = message.getAttachments();
         if (attachments == null) {
-            return StringUtil.EMPTY;
+            return "";
         }
         final List<String> fallbacks = attachments.stream().map(Attachment::getFallback).collect(Collectors.toList());
         return String.join("\n", fallbacks);
@@ -330,7 +330,7 @@ public class SlackDataStore extends AbstractDataStore {
                 permalink = client.getPermalink(channel.getId(), message.getTs());
             } else {
                 permalink =
-                        "https://" + team.getDomain() + ".slack.com/archives/" + channel.getId() + "/p" + message.getTs().replace(".", StringUtil.EMPTY);
+                        "https://" + team.getDomain() + ".slack.com/archives/" + channel.getId() + "/p" + message.getTs().replace(".", "");
             }
         }
         return permalink;
@@ -351,12 +351,12 @@ public class SlackDataStore extends AbstractDataStore {
             } catch (final Exception e) {
                 if (ignoreError) {
                     logger.warn("Failed to get contents: " + file.getName(), e);
-                    return StringUtil.EMPTY;
+                    return "";
                 } else {
                     throw new DataStoreCrawlingException(file.getPermalink(), "Failed to get contents: " + file.getName(), e);
                 }
             }
         }
-        return StringUtil.EMPTY;
+        return "";
     }
 }
