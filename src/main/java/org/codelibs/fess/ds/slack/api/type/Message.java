@@ -28,7 +28,6 @@ public class Message {
     protected String user;
     protected String text;
     protected String subtype;
-    protected String username;
     protected String permalink;
 
     @JsonProperty("bot_id")
@@ -64,10 +63,6 @@ public class Message {
 
     public String getSubtype() {
         return subtype;
-    }
-
-    public String getUsername() {
-        return username;
     }
 
     public String getPermalink() {

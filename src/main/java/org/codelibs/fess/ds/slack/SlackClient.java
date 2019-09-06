@@ -15,6 +15,7 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
@@ -26,8 +27,10 @@ import java.util.function.Function;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import org.codelibs.core.lang.StringUtil;
 import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.fess.Constants;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsClient;
 import org.codelibs.fess.ds.slack.api.method.chat.ChatClient;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsClient;
@@ -49,28 +52,34 @@ import org.codelibs.fess.exception.DataStoreException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class SlackClient {
+public class SlackClient implements Closeable {
 
     private static final Logger logger = LoggerFactory.getLogger(SlackClient.class);
 
     protected static final String SLACK_API_ENDPOINT = "https://slack.com/api/";
 
     protected static final String TOKEN_PARAM = "token";
+    protected static final String INCLUDE_PRIVATE_PARAM = "includePrivate";
     protected static final String CHANNELS_PARAM = "channels";
     protected static final String CHANNELS_ALL = "*all";
     protected static final String CHANNELS_SEPARATOR = ",";
+    protected static final String CHANNEL_COUNT = "channel_count";
+    protected static final String USER_COUNT = "user_count";
+    protected static final String MESSAGE_COUNT = "message_count";
+    protected static final String FILE_COUNT = "file_count";
 
     protected static final String USER_CACHE_SIZE = "user_cache_size";
     protected static final String BOT_CACHE_SIZE = "bot_cache_size";
     protected static final String CHANNEL_CACHE_SIZE = "channel_cache_size";
 
-    protected static final Integer DEFAULT_CHANNEL_FETCH_LIMIT = 100;
-    protected static final Integer DEFAULT_USER_FETCH_LIMIT = 100;
-    protected static final Integer DEFAULT_MESSAGE_FETCH_LIMIT = 100;
-    protected static final Integer DEFAULT_FILE_FETCH_COUNT = 20;
+    protected static final String DEFAULT_CHANNEL_COUNT = "100";
+    protected static final String DEFAULT_USER_COUNT = "100";
+    protected static final String DEFAULT_MESSAGE_COUNT = "100";
+    protected static final String DEFAULT_FILE_COUNT = "20";
     protected static final String DEFAULT_CACHE_SIZE = "10000";
 
     protected final String token;
+    protected final Boolean includePrivate;
 
     protected final ConversationsClient conversations;
     protected final UsersClient users;
@@ -85,12 +94,14 @@ public class SlackClient {
 
     public SlackClient(final Map<String, String> params) {
         final String token = getToken(params);
+
         if (token.isEmpty()) {
-            throw new DataStoreException("Parameter " + TOKEN_PARAM + " is required");
+            throw new DataStoreException("Parameter " + TOKEN_PARAM + " required");
         }
 
         this.params = params;
         this.token = token;
+        this.includePrivate = isIncludePrivate(params);
         this.conversations = new ConversationsClient(this);
         this.users = new UsersClient(this);
         this.files = new FilesClient(this);
@@ -102,11 +113,11 @@ public class SlackClient {
                 .newBuilder()
                 .maximumSize(Integer.parseInt(params.getOrDefault(USER_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, User>() {
-                        @Override
-                        public User load(final String key) {
-                            return users.info(key).execute().getUser();
-                        }
-                    }
+                           @Override
+                           public User load(final String key) {
+                               return users.info(key).execute().getUser();
+                           }
+                       }
                 );
         botsCache = CacheBuilder
                 .newBuilder()
@@ -139,11 +150,24 @@ public class SlackClient {
         });
     }
 
+    @Override
+    public void close() {
+        // TODO
+    }
+
     protected String getToken(final Map<String, String> paramMap) {
         if (paramMap.containsKey(TOKEN_PARAM)) {
             return paramMap.get(TOKEN_PARAM);
         }
-        return "";
+        return StringUtil.EMPTY;
+    }
+
+    protected Boolean isIncludePrivate(final Map<String, String> paramMap) {
+        return paramMap.getOrDefault(INCLUDE_PRIVATE_PARAM, Constants.FALSE).equalsIgnoreCase(Constants.TRUE);
+    }
+
+    protected String getTypes() {
+        return includePrivate ? "public_channel,private_channel" : "public_channel";
     }
 
     public Team getTeam() {
@@ -180,7 +204,7 @@ public class SlackClient {
             for (final String name : params.get(CHANNELS_PARAM).split(CHANNELS_SEPARATOR)) {
                 try {
                     consumer.accept(getChannel(name));
-                } catch (final Exception e) {
+                } catch (final ExecutionException e) {
                     logger.warn("Failed to get a channel.", e);
                 }
             }
@@ -188,13 +212,12 @@ public class SlackClient {
     }
 
     public void getChannelFiles(final String channelId, final Consumer<File> consumer) {
-        getChannelFiles(channelId, DEFAULT_FILE_FETCH_COUNT, consumer);
+        getChannelFiles(channelId, Integer.parseInt(params.getOrDefault(FILE_COUNT, DEFAULT_FILE_COUNT)), consumer);
     }
 
     public void getChannelFiles(final String channelId, final Integer count, final Consumer<File> consumer) {
-        FilesListResponse response = files.list().channel(channelId).count(count).execute();
+        FilesListResponse response = files.list().channel(channelId).types(getTypes()).count(count).execute();
         while (true) {
-            logger.info("We are processing files!!! : " + response.getFiles());
             if (!response.ok()) {
                 logger.warn("Slack API error occured on \"files.list\": " + response.getError());
                 return;
@@ -208,11 +231,11 @@ public class SlackClient {
     }
 
     public void getAllChannels(final Consumer<Channel> consumer) {
-        getAllChannels(DEFAULT_CHANNEL_FETCH_LIMIT, consumer);
+        getAllChannels(Integer.parseInt(params.getOrDefault(CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT)), consumer);
     }
 
     public void getAllChannels(final Integer limit, final Consumer<Channel> consumer) {
-        ConversationsListResponse response = conversations.list().types("public_channel,private_channel").limit(limit).execute();
+        ConversationsListResponse response = conversations.list().types(getTypes()).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
                 logger.warn("Slack API error occured on \"conversations.list\": " + response.getError());
@@ -223,12 +246,12 @@ public class SlackClient {
             if (nextCursor.isEmpty()) {
                 break;
             }
-            response = conversations.list().types("public_channel,private_channel").limit(limit).cursor(nextCursor).execute();
+            response = conversations.list().types(getTypes()).limit(limit).cursor(nextCursor).execute();
         }
     }
 
     public void getChannelMessages(final String channelId, final Consumer<Message> consumer) {
-        getChannelMessages(channelId, DEFAULT_MESSAGE_FETCH_LIMIT, consumer);
+        getChannelMessages(channelId, Integer.parseInt(params.getOrDefault(MESSAGE_COUNT, DEFAULT_MESSAGE_COUNT)), consumer);
     }
 
     public void getChannelMessages(final String channelId, final Integer limit, final Consumer<Message> consumer) {
@@ -248,7 +271,7 @@ public class SlackClient {
     }
 
     public void getMessageReplies(final String channelId, final String threadTs, final Consumer<Message> consumer) {
-        getMessageReplies(channelId, threadTs, DEFAULT_MESSAGE_FETCH_LIMIT, consumer);
+        getMessageReplies(channelId, threadTs, Integer.parseInt(params.getOrDefault(MESSAGE_COUNT, DEFAULT_MESSAGE_COUNT)), consumer);
     }
 
     public void getMessageReplies(final String channelId, final String threadTs, final Integer limit, final Consumer<Message> consumer) {
@@ -275,7 +298,7 @@ public class SlackClient {
     }
 
     public void getUsers(final Consumer<User> consumer) {
-        getUsers(DEFAULT_USER_FETCH_LIMIT, consumer);
+        getUsers(Integer.parseInt(params.getOrDefault(USER_COUNT, DEFAULT_USER_COUNT)), consumer);
     }
 
     public void getUsers(final Integer limit, final Consumer<User> consumer) {

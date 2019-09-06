@@ -17,8 +17,11 @@ package org.codelibs.fess.ds.slack.api.type;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.PropertyNamingStrategy;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonNaming(PropertyNamingStrategy.SnakeCaseStrategy.class)
 public class File {
 
     protected String id;
@@ -28,13 +31,8 @@ public class File {
     protected String mimetype;
     protected String user;
     protected Long size;
-
-    @JsonProperty("url_private")
     protected String urlPrivate;
-
-    @JsonProperty("url_private_download")
     protected String urlPrivateDownload;
-
     protected String permalink;
 
     @JsonProperty("thumb_64")
