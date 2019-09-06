@@ -103,11 +103,9 @@ public class SlackDataStore extends AbstractDataStore {
             logger.debug("configMap: {}", configMap);
         }
 
-        final SlackClient client = new SlackClient(paramMap);
-        final Team team = client.getTeam();
-
         final ExecutorService executorService = newFixedThreadPool(Integer.parseInt(paramMap.getOrDefault(NUMBER_OF_THREADS, "1")));
-        try {
+        try (final SlackClient client = new SlackClient(paramMap)) {
+            final Team team = client.getTeam();
             final boolean fileCrawl = (Boolean) configMap.get(FILE_CRAWL);
             client.getChannels(channel -> {
                 processChannelMessages(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team, channel);
@@ -426,7 +424,7 @@ public class SlackDataStore extends AbstractDataStore {
     protected String getFileContent(final SlackClient client, final File file, final boolean ignoreError) {
         if (file.getPermalink() != null) {
             final String mimeType = file.getMimetype();
-            if(mimeType.startsWith("image")) {
+            if(!mimeType.startsWith("text") && !mimeType.equals("application/pdf")) {
                 return StringUtil.EMPTY;
             }
             if (logger.isDebugEnabled()) {
