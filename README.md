@@ -44,7 +44,7 @@ includePrivate=false
 Example :
 ```
 title=message.user + " #" + message.channel
-digest=message.channel + "\n" + message.user + "\n" + message.text + "\n" + message.attachments
+digest=message.text + "\n" + message.attachments
 content=message.text
 created=message.timestamp
 timestamp=message.timestamp
