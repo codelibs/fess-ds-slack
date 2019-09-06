@@ -16,16 +16,16 @@
 package org.codelibs.fess.ds.slack.api.type;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.PropertyNamingStrategy;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonNaming(PropertyNamingStrategy.SnakeCaseStrategy.class)
 public class User {
 
     protected String id;
     protected String name;
     protected Boolean deleted;
-
-    @JsonProperty("real_name")
     protected String realName;
 
     protected Profile profile;
@@ -51,3 +51,4 @@ public class User {
     }
 
 }
+

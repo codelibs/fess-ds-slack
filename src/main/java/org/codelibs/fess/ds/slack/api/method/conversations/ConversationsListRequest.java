@@ -17,7 +17,6 @@ package org.codelibs.fess.ds.slack.api.method.conversations;
 
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
-import org.codelibs.fess.ds.slack.SlackClient;
 
 public class ConversationsListRequest extends Request<ConversationsListResponse> {
 
@@ -25,8 +24,8 @@ public class ConversationsListRequest extends Request<ConversationsListResponse>
     protected Boolean excludeArchived;
     protected Integer limit;
 
-    public ConversationsListRequest(final SlackClient client) {
-        super(client);
+    public ConversationsListRequest(final String token) {
+        super(token);
     }
 
     @Override
@@ -55,7 +54,7 @@ public class ConversationsListRequest extends Request<ConversationsListResponse>
     }
 
     private CurlRequest request() {
-        final CurlRequest request = client.request(GET, "conversations.list");
+        final CurlRequest request = getCurlRequest(GET, "conversations.list");
         if (cursor != null) {
             request.param("cursor", cursor);
         }

@@ -15,11 +15,13 @@
  */
 package org.codelibs.fess.ds.slack.api.method.chat;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.PropertyNamingStrategy;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import org.codelibs.fess.ds.slack.api.Response;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonNaming(PropertyNamingStrategy.SnakeCaseStrategy.class)
 public class ChatGetPermalinkResponse extends Response {
 
     protected String channel;

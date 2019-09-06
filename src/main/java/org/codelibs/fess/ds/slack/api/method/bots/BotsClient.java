@@ -15,18 +15,16 @@
  */
 package org.codelibs.fess.ds.slack.api.method.bots;
 
-import org.codelibs.fess.ds.slack.SlackClient;
-
 public class BotsClient {
 
-    protected final SlackClient client;
+    protected final String token;
 
-    public BotsClient(final SlackClient client) {
-        this.client = client;
+    public BotsClient(final String token) {
+        this.token = token;
     }
 
     public BotsInfoRequest info() {
-        return new BotsInfoRequest(client);
+        return new BotsInfoRequest(token);
     }
 
 }

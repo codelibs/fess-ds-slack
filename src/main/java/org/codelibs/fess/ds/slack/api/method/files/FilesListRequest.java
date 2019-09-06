@@ -17,7 +17,6 @@ package org.codelibs.fess.ds.slack.api.method.files;
 
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
-import org.codelibs.fess.ds.slack.SlackClient;
 
 public class FilesListRequest extends Request<FilesListResponse> {
 
@@ -25,8 +24,8 @@ public class FilesListRequest extends Request<FilesListResponse> {
     protected Integer count, page;
     protected Long tsFrom, tsTo;
 
-    public FilesListRequest(final SlackClient client) {
-        super(client);
+    public FilesListRequest(final String token) {
+        super(token);
     }
 
     @Override
@@ -70,7 +69,7 @@ public class FilesListRequest extends Request<FilesListResponse> {
     }
 
     private CurlRequest request() {
-        final CurlRequest request = client.request(GET, "files.list");
+        final CurlRequest request = getCurlRequest(GET, "files.list");
         if (channel != null) {
             request.param("channel", channel);
         }

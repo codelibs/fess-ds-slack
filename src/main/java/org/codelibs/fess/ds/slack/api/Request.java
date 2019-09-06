@@ -20,7 +20,6 @@ import java.util.function.Function;
 
 import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.SlackClient;
 import org.codelibs.fess.ds.slack.SlackDataStoreException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -32,10 +31,12 @@ public abstract class Request<T extends Response> {
     public static final Function<String, CurlRequest> PUT = Curl::put;
     public static final Function<String, CurlRequest> DELETE = Curl::delete;
 
-    protected final SlackClient client;
+    protected static final String SLACK_API_ENDPOINT = "https://slack.com/api/";
 
-    public Request(final SlackClient client) {
-        this.client = client;
+    protected final String token;
+
+    public Request(final String token) {
+        this.token = token;
     }
 
     public abstract T execute();
@@ -49,4 +50,12 @@ public abstract class Request<T extends Response> {
         }
     }
 
+    public CurlRequest getCurlRequest(final Function<String, CurlRequest> method, final String path) {
+        final StringBuilder buf = new StringBuilder(100);
+        buf.append(SLACK_API_ENDPOINT);
+        if (path != null) {
+            buf.append(path);
+        }
+        return method.apply(buf.toString()).header("Authorization", "Bearer " + token);
+    }
 }

@@ -17,14 +17,13 @@ package org.codelibs.fess.ds.slack.api.method.bots;
 
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
-import org.codelibs.fess.ds.slack.SlackClient;
 
 public class BotsInfoRequest extends Request<BotsInfoResponse> {
 
     protected String bot;
 
-    public BotsInfoRequest(final SlackClient client) {
-        super(client);
+    public BotsInfoRequest(final String token) {
+        super(token);
     }
 
     @Override
@@ -38,7 +37,7 @@ public class BotsInfoRequest extends Request<BotsInfoResponse> {
     }
 
     private CurlRequest request() {
-        final CurlRequest request = client.request(GET, "bots.info");
+        final CurlRequest request = getCurlRequest(GET, "bots.info");
         if (bot != null) {
             request.param("bot", bot);
         }

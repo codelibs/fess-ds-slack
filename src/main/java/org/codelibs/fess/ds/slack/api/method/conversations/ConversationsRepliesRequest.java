@@ -17,7 +17,6 @@ package org.codelibs.fess.ds.slack.api.method.conversations;
 
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
-import org.codelibs.fess.ds.slack.SlackClient;
 
 public class ConversationsRepliesRequest extends Request<ConversationsRepliesResponse> {
 
@@ -26,8 +25,8 @@ public class ConversationsRepliesRequest extends Request<ConversationsRepliesRes
     protected Integer limit;
     protected Boolean inclusive;
 
-    public ConversationsRepliesRequest(final SlackClient client, final String channel, final String ts) {
-        super(client);
+    public ConversationsRepliesRequest(final String token, final String channel, final String ts) {
+        super(token);
         this.channel = channel;
         this.ts = ts;
     }
@@ -63,7 +62,7 @@ public class ConversationsRepliesRequest extends Request<ConversationsRepliesRes
     }
 
     private CurlRequest request() {
-        final CurlRequest request = client.request(GET, "conversations.replies");
+        final CurlRequest request = getCurlRequest(GET, "conversations.replies");
         if (channel != null) {
             request.param("channel", channel);
         }

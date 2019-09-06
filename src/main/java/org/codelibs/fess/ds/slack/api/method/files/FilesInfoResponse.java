@@ -17,13 +17,14 @@ package org.codelibs.fess.ds.slack.api.method.files;
 
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.PropertyNamingStrategy;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
 import org.codelibs.fess.ds.slack.api.Response;
 import org.codelibs.fess.ds.slack.api.type.File;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
-
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonNaming(PropertyNamingStrategy.SnakeCaseStrategy.class)
 public class FilesInfoResponse extends Response {
 
     protected File file;
@@ -32,7 +33,6 @@ public class FilesInfoResponse extends Response {
         return file;
     }
 
-    @JsonProperty("response_metadata")
     protected Map<String, Object> responseMetadata;
 
     public Map<String, Object> getResponseMetadata() {

@@ -15,22 +15,20 @@
  */
 package org.codelibs.fess.ds.slack.api.method.users;
 
-import org.codelibs.fess.ds.slack.SlackClient;
-
 public class UsersClient {
 
-    protected final SlackClient client;
+    protected final String token;
 
-    public UsersClient(final SlackClient client) {
-        this.client = client;
+    public UsersClient(final String token) {
+        this.token = token;
     }
 
     public UsersListRequest list() {
-        return new UsersListRequest(client);
+        return new UsersListRequest(token);
     }
 
     public UsersInfoRequest info(final String user) {
-        return new UsersInfoRequest(client, user);
+        return new UsersInfoRequest(token, user);
     }
 
 }

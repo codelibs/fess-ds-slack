@@ -17,15 +17,14 @@ package org.codelibs.fess.ds.slack.api.method.conversations;
 
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
-import org.codelibs.fess.ds.slack.SlackClient;
 
 public class ConversationsInfoRequest extends Request<ConversationsInfoResponse> {
 
     protected final String channel;
     protected Boolean includeLocale;
 
-    public ConversationsInfoRequest(final SlackClient client, final String channel) {
-        super(client);
+    public ConversationsInfoRequest(final String token, final String channel) {
+        super(token);
         this.channel = channel;
     }
 
@@ -40,7 +39,7 @@ public class ConversationsInfoRequest extends Request<ConversationsInfoResponse>
     }
 
     private CurlRequest request() {
-        final CurlRequest request = client.request(GET, "conversations.info");
+        final CurlRequest request = getCurlRequest(GET, "conversations.info");
         if (channel != null) {
             request.param("channel", channel);
         }

@@ -15,18 +15,16 @@
  */
 package org.codelibs.fess.ds.slack.api.method.team;
 
-import org.codelibs.fess.ds.slack.SlackClient;
-
 public class TeamClient {
 
-    protected final SlackClient client;
+    protected final String token;
 
-    public TeamClient(final SlackClient client) {
-        this.client = client;
+    public TeamClient(final String token) {
+        this.token = token;
     }
 
     public TeamInfoRequest info() {
-        return new TeamInfoRequest(client);
+        return new TeamInfoRequest(token);
     }
 
 }

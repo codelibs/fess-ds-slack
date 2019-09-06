@@ -18,21 +18,17 @@ package org.codelibs.fess.ds.slack.api.type;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.PropertyNamingStrategy;
+import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonNaming(PropertyNamingStrategy.SnakeCaseStrategy.class)
 public class Channel {
 
     protected String id;
     protected String name;
-
-    @JsonProperty("is_channel")
     protected Boolean isChannel;
-
-    @JsonProperty("is_archived")
     protected Boolean isArchived;
-
-    @JsonProperty("is_private")
     protected Boolean isPrivate;
 
     protected List<String> members;

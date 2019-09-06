@@ -52,11 +52,9 @@ import org.codelibs.fess.exception.DataStoreException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class SlackClient implements Closeable {
+public class SlackClient implements Closeable  {
 
     private static final Logger logger = LoggerFactory.getLogger(SlackClient.class);
-
-    protected static final String SLACK_API_ENDPOINT = "https://slack.com/api/";
 
     protected static final String TOKEN_PARAM = "token";
     protected static final String INCLUDE_PRIVATE_PARAM = "includePrivate";
@@ -102,12 +100,12 @@ public class SlackClient implements Closeable {
         this.params = params;
         this.token = token;
         this.includePrivate = isIncludePrivate(params);
-        this.conversations = new ConversationsClient(this);
-        this.users = new UsersClient(this);
-        this.files = new FilesClient(this);
-        this.bots = new BotsClient(this);
-        this.chat = new ChatClient(this);
-        this.team = new TeamClient(this);
+        this.conversations = new ConversationsClient(token);
+        this.users = new UsersClient(token);
+        this.files = new FilesClient(token);
+        this.bots = new BotsClient(token);
+        this.chat = new ChatClient(token);
+        this.team = new TeamClient(token);
 
         usersCache = CacheBuilder
                 .newBuilder()
@@ -317,12 +315,4 @@ public class SlackClient implements Closeable {
         }
     }
 
-    public CurlRequest request(final Function<String, CurlRequest> method, final String path) {
-        final StringBuilder buf = new StringBuilder(100);
-        buf.append(SLACK_API_ENDPOINT);
-        if (path != null) {
-            buf.append(path);
-        }
-        return method.apply(buf.toString()).header("Authorization", "Bearer " + token);
-    }
 }

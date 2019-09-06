@@ -17,14 +17,13 @@ package org.codelibs.fess.ds.slack.api.method.chat;
 
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
-import org.codelibs.fess.ds.slack.SlackClient;
 
 public class ChatGetPermalinkRequest extends Request<ChatGetPermalinkResponse> {
 
     protected final String channel, ts;
 
-    public ChatGetPermalinkRequest(final SlackClient client, final String channel, final String ts) {
-        super(client);
+    public ChatGetPermalinkRequest(final String token, final String channel, final String ts) {
+        super(token);
         this.channel = channel;
         this.ts = ts;
     }
@@ -35,7 +34,7 @@ public class ChatGetPermalinkRequest extends Request<ChatGetPermalinkResponse> {
     }
 
     private CurlRequest request() {
-        final CurlRequest request = client.request(GET, "chat.getPermalink");
+        final CurlRequest request = getCurlRequest(GET, "chat.getPermalink");
         if (channel != null) {
             request.param("channel", channel);
         }

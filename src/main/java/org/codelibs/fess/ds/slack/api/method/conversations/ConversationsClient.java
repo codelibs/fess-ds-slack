@@ -15,30 +15,28 @@
  */
 package org.codelibs.fess.ds.slack.api.method.conversations;
 
-import org.codelibs.fess.ds.slack.SlackClient;
-
 public class ConversationsClient {
 
-    protected final SlackClient client;
+    protected final String token;
 
-    public ConversationsClient(final SlackClient client) {
-        this.client = client;
+    public ConversationsClient(final String token) {
+        this.token = token;
     }
 
     public ConversationsListRequest list() {
-        return new ConversationsListRequest(client);
+        return new ConversationsListRequest(token);
     }
 
     public ConversationsHistoryRequest history(final String channel) {
-        return new ConversationsHistoryRequest(client, channel);
+        return new ConversationsHistoryRequest(token, channel);
     }
 
     public ConversationsInfoRequest info(final String channel) {
-        return new ConversationsInfoRequest(client, channel);
+        return new ConversationsInfoRequest(token, channel);
     }
 
     public ConversationsRepliesRequest replies(final String channel, final String ts) {
-        return new ConversationsRepliesRequest(client, channel, ts);
+        return new ConversationsRepliesRequest(token, channel, ts);
     }
 
 }

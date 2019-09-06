@@ -15,18 +15,16 @@
  */
 package org.codelibs.fess.ds.slack.api.method.chat;
 
-import org.codelibs.fess.ds.slack.SlackClient;
-
 public class ChatClient {
 
-    protected final SlackClient client;
+    protected final String token;
 
-    public ChatClient(final SlackClient client) {
-        this.client = client;
+    public ChatClient(final String token) {
+        this.token = token;
     }
 
     public ChatGetPermalinkRequest getPermalink(final String channel, final String ts) {
-        return new ChatGetPermalinkRequest(client, channel, ts);
+        return new ChatGetPermalinkRequest(token, channel, ts);
     }
 
 }
