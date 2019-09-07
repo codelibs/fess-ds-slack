@@ -15,12 +15,12 @@
  */
 package org.codelibs.fess.ds.slack.api.method.team;
 
-public class TeamClient {
+import org.codelibs.fess.ds.slack.api.AbstractClient;
 
-    protected final String token;
+public class TeamClient extends AbstractClient {
 
     public TeamClient(final String token) {
-        this.token = token;
+        super(token);
     }
 
     public TeamInfoRequest info() {

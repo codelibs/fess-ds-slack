@@ -302,7 +302,7 @@ public class SlackDataStore extends AbstractDataStore {
             fileMap.put(MESSAGE_TITLE, file.getName() + " " + file.getTitle());
             fileMap.put(MESSAGE_TEXT, fileContent);
             fileMap.put(MESSAGE_TIMESTAMP, getFileTimestamp(file));
-            fileMap.put(MESSAGE_USER, file.getUser());
+            fileMap.put(MESSAGE_USER, getFileUsername(client, file));
             fileMap.put(MESSAGE_CHANNEL, channel.getName());
             fileMap.put(MESSAGE_PERMALINK, file.getPermalink());
             fileMap.put(MESSAGE_ATTACHMENTS, "");
@@ -367,21 +367,7 @@ public class SlackDataStore extends AbstractDataStore {
     public String getMessageUsername(final SlackClient client, final Message message) {
         try {
             if (message.getUser() != null) {
-                try {
-                    final User user = client.getUser(message.getUser());
-                    if(user.getProfile().getDisplayName() != null) {
-                        return user.getProfile().getDisplayName();
-                    }
-                    if(user.getRealName() != null) {
-                        return user.getRealName();
-                    }
-                    if(user.getName() != null) {
-                        return user.getName();
-                    }
-                } catch (ExecutionException e) {
-                    logger.warn("Failed to get username from messages.", e);
-                }
-                return message.getUser();
+                return getUsername(client, message.getUser());
             }
             if (message.getSubtype() != null) {
                 if (message.getSubtype().equals("bot_message")) {
@@ -397,6 +383,37 @@ public class SlackDataStore extends AbstractDataStore {
             }
         }
         return StringUtil.EMPTY;
+    }
+
+    public String getFileUsername(final SlackClient client, final File file) {
+        try {
+            if (file.getUser() != null) {
+                return getUsername(client, file.getUser());
+            }
+        } catch(final Exception e) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Failed to get a username from message.", e);
+            }
+        }
+        return StringUtil.EMPTY;
+    }
+
+    protected String getUsername(final SlackClient client, final String userId) {
+        try {
+            final User user = client.getUser(userId);
+            if(user.getProfile().getDisplayName() != null) {
+                return user.getProfile().getDisplayName();
+            }
+            if(user.getRealName() != null) {
+                return user.getRealName();
+            }
+            if(user.getName() != null) {
+                return user.getName();
+            }
+        } catch (ExecutionException e) {
+            logger.warn("Failed to get username from user.", e);
+        }
+        return userId;
     }
 
     protected String getMessageAttachmentsText(final Message message) {
@@ -424,11 +441,9 @@ public class SlackDataStore extends AbstractDataStore {
     protected String getFileContent(final SlackClient client, final File file, final boolean ignoreError) {
         if (file.getPermalink() != null) {
             final String mimeType = file.getMimetype();
+            // TODO: avoid crawling images, zip ...etc.
             if(!mimeType.startsWith("text") && !mimeType.equals("application/pdf")) {
                 return StringUtil.EMPTY;
-            }
-            if (logger.isDebugEnabled()) {
-                logger.debug("Downloading the file :" + file.getName() );
             }
 
             try (final InputStream in = client.getFileContent(file.getUrlPrivateDownload())) {

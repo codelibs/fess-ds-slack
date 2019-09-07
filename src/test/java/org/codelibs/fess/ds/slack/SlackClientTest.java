@@ -38,9 +38,9 @@ import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
-import org.dbflute.utflute.lastadi.ContainerTestCase;
+import org.dbflute.utflute.lastaflute.LastaFluteTestCase;
 
-public class SlackClientTest extends ContainerTestCase {
+public class SlackClientTest extends LastaFluteTestCase {
 
     @Override
     protected String prepareConfigFile() {

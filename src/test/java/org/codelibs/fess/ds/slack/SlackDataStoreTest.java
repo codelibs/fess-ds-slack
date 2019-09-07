@@ -22,9 +22,9 @@ import org.codelibs.fess.ds.callback.IndexUpdateCallback;
 import org.codelibs.fess.es.config.exentity.DataConfig;
 import org.codelibs.fess.mylasta.direction.FessConfig;
 import org.codelibs.fess.util.ComponentUtil;
-import org.dbflute.utflute.lastadi.ContainerTestCase;
+import org.dbflute.utflute.lastaflute.LastaFluteTestCase;
 
-public class SlackDataStoreTest extends ContainerTestCase {
+public class SlackDataStoreTest extends LastaFluteTestCase {
 
     public SlackDataStore dataStore;
 

@@ -20,7 +20,8 @@ import org.codelibs.fess.ds.slack.api.Request;
 
 public class ChatGetPermalinkRequest extends Request<ChatGetPermalinkResponse> {
 
-    protected final String channel, ts;
+    protected final String channel;
+    protected final String ts;
 
     public ChatGetPermalinkRequest(final String token, final String channel, final String ts) {
         super(token);

@@ -21,7 +21,9 @@ import org.codelibs.fess.ds.slack.api.Request;
 public class FilesInfoRequest extends Request<FilesInfoResponse> {
 
     protected final String file;
-    protected Integer count, limit, page;
+    protected Integer count;
+    protected Integer limit;
+    protected Integer page;
     protected String cursor;
 
     public FilesInfoRequest(final String token, final String file) {

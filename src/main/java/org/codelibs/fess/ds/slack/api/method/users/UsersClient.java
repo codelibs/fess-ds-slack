@@ -15,12 +15,12 @@
  */
 package org.codelibs.fess.ds.slack.api.method.users;
 
-public class UsersClient {
+import org.codelibs.fess.ds.slack.api.AbstractClient;
 
-    protected final String token;
+public class UsersClient extends AbstractClient {
 
     public UsersClient(final String token) {
-        this.token = token;
+        super(token);
     }
 
     public UsersListRequest list() {

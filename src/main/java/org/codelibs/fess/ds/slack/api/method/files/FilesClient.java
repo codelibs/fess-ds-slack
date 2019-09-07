@@ -15,12 +15,12 @@
  */
 package org.codelibs.fess.ds.slack.api.method.files;
 
-public class FilesClient {
+import org.codelibs.fess.ds.slack.api.AbstractClient;
 
-    protected final String token;
+public class FilesClient extends AbstractClient {
 
     public FilesClient(final String token) {
-        this.token = token;
+        super(token);
     }
 
     public FilesListRequest list() {

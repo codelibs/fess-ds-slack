@@ -21,7 +21,8 @@ import org.codelibs.fess.ds.slack.api.Request;
 public class UsersListRequest extends Request<UsersListResponse> {
 
     protected String cursor;
-    protected Boolean includeLocale, presence;
+    protected Boolean includeLocale;
+    protected Boolean presence;
     protected Integer limit;
 
     public UsersListRequest(final String token) {

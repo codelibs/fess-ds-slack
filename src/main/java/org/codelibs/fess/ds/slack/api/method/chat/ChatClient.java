@@ -15,12 +15,12 @@
  */
 package org.codelibs.fess.ds.slack.api.method.chat;
 
-public class ChatClient {
+import org.codelibs.fess.ds.slack.api.AbstractClient;
 
-    protected final String token;
+public class ChatClient extends AbstractClient {
 
     public ChatClient(final String token) {
-        this.token = token;
+        super(token);
     }
 
     public ChatGetPermalinkRequest getPermalink(final String channel, final String ts) {

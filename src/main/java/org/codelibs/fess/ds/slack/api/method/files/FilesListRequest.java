@@ -20,9 +20,13 @@ import org.codelibs.fess.ds.slack.api.Request;
 
 public class FilesListRequest extends Request<FilesListResponse> {
 
-    protected String channel, types, user;
-    protected Integer count, page;
-    protected Long tsFrom, tsTo;
+    protected String channel;
+    protected String types;
+    protected String user;
+    protected Integer count;
+    protected Integer page;
+    protected Long tsFrom;
+    protected Long tsTo;
 
     public FilesListRequest(final String token) {
         super(token);

@@ -22,14 +22,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import org.codelibs.core.lang.StringUtil;
 import org.codelibs.curl.Curl;
-import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.Constants;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsClient;
 import org.codelibs.fess.ds.slack.api.method.chat.ChatClient;
@@ -48,7 +46,6 @@ import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
-import org.codelibs.fess.exception.DataStoreException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,7 +73,6 @@ public class SlackClient implements Closeable  {
     protected static final String DEFAULT_FILE_COUNT = "20";
     protected static final String DEFAULT_CACHE_SIZE = "10000";
 
-    protected final String token;
     protected final Boolean includePrivate;
 
     protected final ConversationsClient conversations;
@@ -85,21 +81,20 @@ public class SlackClient implements Closeable  {
     protected final BotsClient bots;
     protected final ChatClient chat;
     protected final TeamClient team;
-    protected Map<String, String> params;
+    protected Map<String, String> paramMap;
     protected LoadingCache<String, User> usersCache;
     protected LoadingCache<String, Bot> botsCache;
     protected LoadingCache<String, Channel> channelsCache;
 
-    public SlackClient(final Map<String, String> params) {
-        final String token = getToken(params);
+    public SlackClient(final Map<String, String> paramMap) {
+        final String token = getToken(paramMap);
 
         if (token.isEmpty()) {
-            throw new DataStoreException("Parameter " + TOKEN_PARAM + " required");
+            throw new SlackDataStoreException("Parameter " + TOKEN_PARAM + " required");
         }
 
-        this.params = params;
-        this.token = token;
-        this.includePrivate = isIncludePrivate(params);
+        this.paramMap = paramMap;
+        this.includePrivate = isIncludePrivate(paramMap);
         this.conversations = new ConversationsClient(token);
         this.users = new UsersClient(token);
         this.files = new FilesClient(token);
@@ -109,7 +104,7 @@ public class SlackClient implements Closeable  {
 
         usersCache = CacheBuilder
                 .newBuilder()
-                .maximumSize(Integer.parseInt(params.getOrDefault(USER_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
+                .maximumSize(Integer.parseInt(paramMap.getOrDefault(USER_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, User>() {
                            @Override
                            public User load(final String key) {
@@ -119,7 +114,7 @@ public class SlackClient implements Closeable  {
                 );
         botsCache = CacheBuilder
                 .newBuilder()
-                .maximumSize(Integer.parseInt(params.getOrDefault(BOT_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
+                .maximumSize(Integer.parseInt(paramMap.getOrDefault(BOT_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, Bot>() {
                            @Override
                            public Bot load(final String key) {
@@ -129,7 +124,7 @@ public class SlackClient implements Closeable  {
                 );
         channelsCache = CacheBuilder
                 .newBuilder()
-                .maximumSize(Integer.parseInt(params.getOrDefault(CHANNEL_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
+                .maximumSize(Integer.parseInt(paramMap.getOrDefault(CHANNEL_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, Channel>() {
                            @Override
                            public Channel load(final String key) {
@@ -137,7 +132,7 @@ public class SlackClient implements Closeable  {
                            }
                        }
                 );
-        // Initialize these caches to avoid exceeding the rate limit of the Slack API
+        // Initialize caches to avoid exceeding the rate limit of the Slack API
         getUsers( user -> {
             usersCache.put(user.getId(), user);
             usersCache.put(user.getName(), user);
@@ -189,17 +184,16 @@ public class SlackClient implements Closeable  {
     }
 
     public InputStream getFileContent(final String fileUrl) throws IOException {
-        // TODO
-        return Curl.get(fileUrl).header("Authorization", "Bearer " + token)
+        return Curl.get(fileUrl).header("Authorization", "Bearer " + getToken(paramMap))
                 .header("Content-type", "application/x-www-form-urlencoded")
-                .param("token", token).execute().getContentAsStream();
+                .execute().getContentAsStream();
     }
 
     public void getChannels(final Consumer<Channel> consumer) {
-        if (!params.containsKey(CHANNELS_PARAM) || params.get(CHANNELS_PARAM).equals(CHANNELS_ALL)) {
+        if (!paramMap.containsKey(CHANNELS_PARAM) || paramMap.get(CHANNELS_PARAM).equals(CHANNELS_ALL)) {
             getAllChannels(consumer);
         } else {
-            for (final String name : params.get(CHANNELS_PARAM).split(CHANNELS_SEPARATOR)) {
+            for (final String name : paramMap.get(CHANNELS_PARAM).split(CHANNELS_SEPARATOR)) {
                 try {
                     consumer.accept(getChannel(name));
                 } catch (final ExecutionException e) {
@@ -210,14 +204,14 @@ public class SlackClient implements Closeable  {
     }
 
     public void getChannelFiles(final String channelId, final Consumer<File> consumer) {
-        getChannelFiles(channelId, Integer.parseInt(params.getOrDefault(FILE_COUNT, DEFAULT_FILE_COUNT)), consumer);
+        getChannelFiles(channelId, Integer.parseInt(paramMap.getOrDefault(FILE_COUNT, DEFAULT_FILE_COUNT)), consumer);
     }
 
     public void getChannelFiles(final String channelId, final Integer count, final Consumer<File> consumer) {
         FilesListResponse response = files.list().channel(channelId).types(getTypes()).count(count).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"files.list\": " + response.getError());
+                logger.warn("Slack API error occured on \"files.list\": {}", response.getError());
                 return;
             }
             response.getFiles().forEach(consumer);
@@ -229,14 +223,14 @@ public class SlackClient implements Closeable  {
     }
 
     public void getAllChannels(final Consumer<Channel> consumer) {
-        getAllChannels(Integer.parseInt(params.getOrDefault(CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT)), consumer);
+        getAllChannels(Integer.parseInt(paramMap.getOrDefault(CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT)), consumer);
     }
 
     public void getAllChannels(final Integer limit, final Consumer<Channel> consumer) {
         ConversationsListResponse response = conversations.list().types(getTypes()).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.list\": " + response.getError());
+                logger.warn("Slack API error occured on \"conversations.list\": {}", response.getError());
                 return;
             }
             response.getChannels().forEach(consumer);
@@ -249,14 +243,14 @@ public class SlackClient implements Closeable  {
     }
 
     public void getChannelMessages(final String channelId, final Consumer<Message> consumer) {
-        getChannelMessages(channelId, Integer.parseInt(params.getOrDefault(MESSAGE_COUNT, DEFAULT_MESSAGE_COUNT)), consumer);
+        getChannelMessages(channelId, Integer.parseInt(paramMap.getOrDefault(MESSAGE_COUNT, DEFAULT_MESSAGE_COUNT)), consumer);
     }
 
     public void getChannelMessages(final String channelId, final Integer limit, final Consumer<Message> consumer) {
         ConversationsHistoryResponse response = conversations.history(channelId).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.history\": " + response.getError());
+                logger.warn("Slack API error occured on \"conversations.history\": {}", response.getError());
                 return;
             }
             response.getMessages().forEach(consumer);
@@ -269,14 +263,14 @@ public class SlackClient implements Closeable  {
     }
 
     public void getMessageReplies(final String channelId, final String threadTs, final Consumer<Message> consumer) {
-        getMessageReplies(channelId, threadTs, Integer.parseInt(params.getOrDefault(MESSAGE_COUNT, DEFAULT_MESSAGE_COUNT)), consumer);
+        getMessageReplies(channelId, threadTs, Integer.parseInt(paramMap.getOrDefault(MESSAGE_COUNT, DEFAULT_MESSAGE_COUNT)), consumer);
     }
 
     public void getMessageReplies(final String channelId, final String threadTs, final Integer limit, final Consumer<Message> consumer) {
         ConversationsRepliesResponse response = conversations.replies(channelId, threadTs).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.replies\": " + response.getError());
+                logger.warn("Slack API error occured on \"conversations.replies\": {}", response.getError());
                 return;
             }
             final List<Message> messages = response.getMessages();
@@ -296,14 +290,14 @@ public class SlackClient implements Closeable  {
     }
 
     public void getUsers(final Consumer<User> consumer) {
-        getUsers(Integer.parseInt(params.getOrDefault(USER_COUNT, DEFAULT_USER_COUNT)), consumer);
+        getUsers(Integer.parseInt(paramMap.getOrDefault(USER_COUNT, DEFAULT_USER_COUNT)), consumer);
     }
 
     public void getUsers(final Integer limit, final Consumer<User> consumer) {
         UsersListResponse response = users.list().limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"users.list\": " + response.getError());
+                logger.warn("Slack API error occured on \"users.list\": {}", response.getError());
                 return;
             }
             response.getMembers().forEach(consumer);

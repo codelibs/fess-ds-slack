@@ -13,18 +13,14 @@
  * either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-package org.codelibs.fess.ds.slack.api.method.bots;
+package org.codelibs.fess.ds.slack.api;
 
-import org.codelibs.fess.ds.slack.api.AbstractClient;
+public abstract class AbstractClient {
 
-public class BotsClient extends AbstractClient {
+    protected final String token;
 
-    public BotsClient(final String token) {
-        super(token);
-    }
-
-    public BotsInfoRequest info() {
-        return new BotsInfoRequest(token);
+    public AbstractClient(final String token) {
+        this.token = token;
     }
 
 }
