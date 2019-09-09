@@ -73,6 +73,7 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String MESSAGE = "message";
     protected static final String MESSAGE_TITLE = "title";
     protected static final String MESSAGE_TEXT = "text";
+    protected static final String MESSAGE_TEAM = "team";
     protected static final String MESSAGE_TIMESTAMP = "timestamp";
     protected static final String MESSAGE_USER = "user";
     protected static final String MESSAGE_CHANNEL = "channel";
@@ -170,7 +171,7 @@ public class SlackDataStore extends AbstractDataStore {
 
     protected ExecutorService newFixedThreadPool(final int nThreads) {
         if (logger.isDebugEnabled()) {
-            logger.debug("Executor Thread Pool: " + nThreads);
+            logger.debug("Executor Thread Pool: {}", nThreads);
         }
         return new ThreadPoolExecutor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>(nThreads),
                 new ThreadPoolExecutor.CallerRunsPolicy());
@@ -195,7 +196,7 @@ public class SlackDataStore extends AbstractDataStore {
                                        final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel) {
         client.getChannelFiles(channel.getId(), file -> {
                     executorService.execute(() -> {
-                        processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, channel, file);
+                        processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, file);
                     });
                 }
         );
@@ -234,6 +235,7 @@ public class SlackDataStore extends AbstractDataStore {
             final String username = getMessageUsername(client, message);
             messageMap.put(MESSAGE_TITLE, StringUtil.EMPTY);
             messageMap.put(MESSAGE_TEXT, messageText);
+            // messageMap.put(MESSAGE_TEAM, team.getName());
             messageMap.put(MESSAGE_TIMESTAMP, getMessageTimestamp(message));
             messageMap.put(MESSAGE_USER, username);
             messageMap.put(MESSAGE_CHANNEL, channel.getName());
@@ -259,12 +261,35 @@ public class SlackDataStore extends AbstractDataStore {
             callback.store(paramMap, dataMap);
         } catch (final CrawlingAccessException e) {
             logger.warn("Crawling Access Exception at : " + dataMap, e);
+
+            Throwable target = e;
+            if (target instanceof MultipleCrawlingAccessException) {
+                final Throwable[] causes = ((MultipleCrawlingAccessException) target).getCauses();
+                if (causes.length > 0) {
+                    target = causes[causes.length - 1];
+                }
+            }
+
+            String errorName;
+            final Throwable cause = target.getCause();
+            if (cause != null) {
+                errorName = cause.getClass().getCanonicalName();
+            } else {
+                errorName = target.getClass().getCanonicalName();
+            }
+
+            final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
+            failureUrlService.store(dataConfig, errorName, url, target);
+        } catch (final Throwable t) {
+            logger.warn("Crawling Access Exception at : " + dataMap, t);
+            final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
+            failureUrlService.store(dataConfig, t.getClass().getCanonicalName(), url, t);
         }
     }
 
     protected void processFile(final DataConfig dataConfig, final IndexUpdateCallback callback,final Map<String, Object> configMap,
-                               final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap, final SlackClient client,
-                               final Channel channel, final File file) {
+                               final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
+                               final SlackClient client, final Team team, final Channel channel, final File file) {
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         final String url = file.getPermalink();
         try {
@@ -301,6 +326,7 @@ public class SlackDataStore extends AbstractDataStore {
             final String fileContent = getFileContent(client, file, ignoreError);
             fileMap.put(MESSAGE_TITLE, file.getName() + " " + file.getTitle());
             fileMap.put(MESSAGE_TEXT, file.getName() + "\n" + fileContent);
+            // fileMap.put(MESSAGE_TEAM, team.getName());
             fileMap.put(MESSAGE_TIMESTAMP, getFileTimestamp(file));
             fileMap.put(MESSAGE_USER, getFileUsername(client, file));
             fileMap.put(MESSAGE_CHANNEL, channel.getName());
