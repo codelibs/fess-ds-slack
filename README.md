@@ -30,7 +30,7 @@ Example :
 token=xoxp-************-************-************-********************************
 channels=general,random
 file_crawl=false
-includePrivate=false
+include_private=false
 ```
 
 | Key | Value |
@@ -38,7 +38,7 @@ includePrivate=false
 | token | OAuth Access Token of SlackApp with permissions. |
 | channels | Scope of channels to crawl. (comma-separated or `*all`) |
 | file_crawl | `true` or `false` (Crawl files or not.) |
-| includePrivate |  `true` or `false` (Crawl private channels or not.)|
+| include_private |  `true` or `false` (Crawl private channels or not.)|
 
 ### Scripts 
 Example :

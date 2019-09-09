@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import org.codelibs.core.lang.StringUtil;
+import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.Constants;
 import org.codelibs.fess.app.service.FailureUrlService;
 import org.codelibs.fess.crawler.exception.CrawlingAccessException;
@@ -467,18 +468,21 @@ public class SlackDataStore extends AbstractDataStore {
     protected String getFileContent(final SlackClient client, final File file, final boolean ignoreError) {
         if (file.getPermalink() != null) {
             final String mimeType = file.getMimetype().trim();
-            try (final InputStream in = client.getFileContent(file.getUrlPrivateDownload())) {
-                Extractor extractor = ComponentUtil.getExtractorFactory().getExtractor(mimeType);
-                if (extractor == null) {
-                    if (logger.isDebugEnabled()) {
-                        logger.debug("use a default extractor as {} by {}", extractorName, mimeType);
-                    }
-                    extractor = ComponentUtil.getComponent(extractorName);
+            final String fileUrl = file.getUrlPrivateDownload();
+            try (final CurlResponse response = client.getFileResponse(fileUrl)) {
+                if (response.getHttpStatusCode() != 200) {
+                    throw new SlackDataStoreException("HTTP Status " + response.getHttpStatusCode() + " : failed to get the file from " + fileUrl);
                 }
-                final Map<String, String> params = new HashMap<>();
-                params.put("Content-Type", mimeType);
-                params.put("resourceName", file.getName());
-                return extractor.getText(in, params).getContent();
+                try (final InputStream in = response.getContentAsStream()) {
+                    Extractor extractor = ComponentUtil.getExtractorFactory().getExtractor(mimeType);
+                    if (extractor == null) {
+                        if (logger.isDebugEnabled()) {
+                            logger.debug("use a default extractor as {} by {}", extractorName, mimeType);
+                        }
+                        extractor = ComponentUtil.getComponent(extractorName);
+                    }
+                    return extractor.getText(in, null).getContent();
+                }
             } catch (final Exception e) {
                 if (ignoreError) {
                     logger.warn("Failed to get contents: " + file.getName(), e);

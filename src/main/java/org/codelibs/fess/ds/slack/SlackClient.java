@@ -16,8 +16,6 @@
 package org.codelibs.fess.ds.slack;
 
 import java.io.Closeable;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -28,6 +26,7 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import org.codelibs.core.lang.StringUtil;
 import org.codelibs.curl.Curl;
+import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.Constants;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsClient;
 import org.codelibs.fess.ds.slack.api.method.chat.ChatClient;
@@ -54,7 +53,7 @@ public class SlackClient implements Closeable  {
     private static final Logger logger = LoggerFactory.getLogger(SlackClient.class);
 
     protected static final String TOKEN_PARAM = "token";
-    protected static final String INCLUDE_PRIVATE_PARAM = "includePrivate";
+    protected static final String INCLUDE_PRIVATE_PARAM = "include_private";
     protected static final String CHANNELS_PARAM = "channels";
     protected static final String CHANNELS_ALL = "*all";
     protected static final String CHANNELS_SEPARATOR = ",";
@@ -146,6 +145,9 @@ public class SlackClient implements Closeable  {
     @Override
     public void close() {
         // TODO
+        usersCache.invalidateAll();
+        botsCache.invalidateAll();
+        channelsCache.invalidateAll();
     }
 
     protected String getToken(final Map<String, String> paramMap) {
@@ -183,10 +185,10 @@ public class SlackClient implements Closeable  {
         return chat.getPermalink(channelId, threadTs).execute().getPermalink();
     }
 
-    public InputStream getFileContent(final String fileUrl) throws IOException {
+    public CurlResponse getFileResponse(final String fileUrl) {
         return Curl.get(fileUrl).header("Authorization", "Bearer " + getToken(paramMap))
-                .header("Content-type", "application/x-www-form-urlencoded")
-                .execute().getContentAsStream();
+                .header("Content-type", "application/x-www-form-urlencoded ")
+                .execute();
     }
 
     public void getChannels(final Consumer<Channel> consumer) {
