@@ -335,7 +335,7 @@ public class SlackDataStore extends AbstractDataStore {
             resultMap.put(MESSAGE, fileMap);
 
             if (logger.isDebugEnabled()) {
-                // logger.debug("fileMap: {}", fileMap);
+                logger.debug("fileMap: {}", fileMap);
             }
 
             for (final Map.Entry<String, String> entry : scriptMap.entrySet()) {
