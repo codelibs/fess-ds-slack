@@ -300,7 +300,7 @@ public class SlackDataStore extends AbstractDataStore {
 
             final String fileContent = getFileContent(client, file, ignoreError);
             fileMap.put(MESSAGE_TITLE, file.getName() + " " + file.getTitle());
-            fileMap.put(MESSAGE_TEXT, fileContent);
+            fileMap.put(MESSAGE_TEXT, file.getName() + "\n" + fileContent);
             fileMap.put(MESSAGE_TIMESTAMP, getFileTimestamp(file));
             fileMap.put(MESSAGE_USER, getFileUsername(client, file));
             fileMap.put(MESSAGE_CHANNEL, channel.getName());
@@ -441,7 +441,7 @@ public class SlackDataStore extends AbstractDataStore {
     protected String getFileContent(final SlackClient client, final File file, final boolean ignoreError) {
         if (file.getPermalink() != null) {
             final String mimeType = file.getMimetype();
-            // TODO: avoid crawling images, zip ...etc.
+
             if(!mimeType.startsWith("text") && !mimeType.equals("application/pdf")) {
                 return StringUtil.EMPTY;
             }
