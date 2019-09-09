@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2018 CodeLibs Project and the Others.
+ * Copyright 2012-2019 CodeLibs Project and the Others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,30 +15,28 @@
  */
 package org.codelibs.fess.ds.slack.api.method.conversations;
 
-import org.codelibs.fess.ds.slack.api.SlackClient;
+import org.codelibs.fess.ds.slack.api.AbstractClient;
 
-public class ConversationsClient {
+public class ConversationsClient extends AbstractClient {
 
-    protected final SlackClient client;
-
-    public ConversationsClient(final SlackClient client) {
-        this.client = client;
+    public ConversationsClient(final String token) {
+        super(token);
     }
 
     public ConversationsListRequest list() {
-        return new ConversationsListRequest(client);
+        return new ConversationsListRequest(token);
     }
 
     public ConversationsHistoryRequest history(final String channel) {
-        return new ConversationsHistoryRequest(client, channel);
+        return new ConversationsHistoryRequest(token, channel);
     }
 
     public ConversationsInfoRequest info(final String channel) {
-        return new ConversationsInfoRequest(client, channel);
+        return new ConversationsInfoRequest(token, channel);
     }
 
     public ConversationsRepliesRequest replies(final String channel, final String ts) {
-        return new ConversationsRepliesRequest(client, channel, ts);
+        return new ConversationsRepliesRequest(token, channel, ts);
     }
 
 }

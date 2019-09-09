@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2018 CodeLibs Project and the Others.
+ * Copyright 2012-2019 CodeLibs Project and the Others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,12 +17,11 @@ package org.codelibs.fess.ds.slack.api.method.team;
 
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
-import org.codelibs.fess.ds.slack.api.SlackClient;
 
 public class TeamInfoRequest extends Request<TeamInfoResponse> {
 
-    public TeamInfoRequest(final SlackClient client) {
-        super(client);
+    public TeamInfoRequest(final String token) {
+        super(token);
     }
 
     @Override
@@ -31,7 +30,7 @@ public class TeamInfoRequest extends Request<TeamInfoResponse> {
     }
 
     private CurlRequest request() {
-        return client.request(GET, "team.info");
+        return getCurlRequest(GET, "team.info");
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2018 CodeLibs Project and the Others.
+ * Copyright 2012-2019 CodeLibs Project and the Others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,16 @@ package org.codelibs.fess.ds.slack.api.method.users;
 
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
-import org.codelibs.fess.ds.slack.api.SlackClient;
 
 public class UsersListRequest extends Request<UsersListResponse> {
 
     protected String cursor;
-    protected Boolean includeLocale, presence;
+    protected Boolean includeLocale;
+    protected Boolean presence;
     protected Integer limit;
 
-    public UsersListRequest(final SlackClient client) {
-        super(client);
+    public UsersListRequest(final String token) {
+        super(token);
     }
 
     @Override
@@ -55,7 +55,7 @@ public class UsersListRequest extends Request<UsersListResponse> {
     }
 
     private CurlRequest request() {
-        final CurlRequest request = client.request(GET, "users.list");
+        final CurlRequest request = getCurlRequest(GET, "users.list");
         if (cursor != null) {
             request.param("cursor", cursor);
         }

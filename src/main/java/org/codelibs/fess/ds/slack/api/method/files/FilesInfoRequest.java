@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2018 CodeLibs Project and the Others.
+ * Copyright 2012-2019 CodeLibs Project and the Others.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,17 @@ package org.codelibs.fess.ds.slack.api.method.files;
 
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Request;
-import org.codelibs.fess.ds.slack.api.SlackClient;
 
 public class FilesInfoRequest extends Request<FilesInfoResponse> {
 
     protected final String file;
-    protected Integer count, limit, page;
+    protected Integer count;
+    protected Integer limit;
+    protected Integer page;
     protected String cursor;
 
-    public FilesInfoRequest(final SlackClient client, final String file) {
-        super(client);
+    public FilesInfoRequest(final String token, final String file) {
+        super(token);
         this.file = file;
     }
 
@@ -56,7 +57,7 @@ public class FilesInfoRequest extends Request<FilesInfoResponse> {
     }
 
     private CurlRequest request() {
-        final CurlRequest request = client.request(GET, "files.info");
+        final CurlRequest request = getCurlRequest(GET, "files.info");
         if (file != null) {
             request.param("file", file);
         }
