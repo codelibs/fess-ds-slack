@@ -83,9 +83,10 @@ public class SlackDataStore extends AbstractDataStore {
 
     protected String extractorName = "tikaExtractor";
 
+
     @Override
-    public String getName() {
-        return "Slack";
+    protected String getName() {
+        return this.getClass().getSimpleName();
     }
 
     public void setExtractorName(final String extractorName) {
