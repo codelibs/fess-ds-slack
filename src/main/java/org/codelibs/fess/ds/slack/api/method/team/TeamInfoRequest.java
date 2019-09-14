@@ -16,12 +16,13 @@
 package org.codelibs.fess.ds.slack.api.method.team;
 
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
 public class TeamInfoRequest extends Request<TeamInfoResponse> {
 
-    public TeamInfoRequest(final String token) {
-        super(token);
+    public TeamInfoRequest(final Authentication authentication) {
+        super(authentication);
     }
 
     @Override

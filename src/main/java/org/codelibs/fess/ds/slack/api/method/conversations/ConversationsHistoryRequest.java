@@ -16,6 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.conversations;
 
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
 public class ConversationsHistoryRequest extends Request<ConversationsHistoryResponse> {
@@ -25,8 +26,8 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
     protected Integer limit;
     protected Boolean inclusive;
 
-    public ConversationsHistoryRequest(final String token, final String channel) {
-        super(token);
+    public ConversationsHistoryRequest(final Authentication authentication, final String channel) {
+        super(authentication);
         this.channel = channel;
     }
 

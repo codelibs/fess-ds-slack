@@ -28,16 +28,22 @@ import org.codelibs.core.lang.StringUtil;
 import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.Constants;
-import org.codelibs.fess.ds.slack.api.method.bots.BotsClient;
-import org.codelibs.fess.ds.slack.api.method.chat.ChatClient;
-import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsClient;
+import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.chat.ChatGetPermalinkRequest;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListResponse;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesResponse;
-import org.codelibs.fess.ds.slack.api.method.files.FilesClient;
+import org.codelibs.fess.ds.slack.api.method.files.FilesInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.files.FilesListRequest;
 import org.codelibs.fess.ds.slack.api.method.files.FilesListResponse;
-import org.codelibs.fess.ds.slack.api.method.team.TeamClient;
-import org.codelibs.fess.ds.slack.api.method.users.UsersClient;
+import org.codelibs.fess.ds.slack.api.method.team.TeamInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.users.UsersInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.users.UsersListRequest;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
 import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
@@ -61,6 +67,8 @@ public class SlackClient implements Closeable  {
     protected static final String USER_COUNT = "user_count";
     protected static final String MESSAGE_COUNT = "message_count";
     protected static final String FILE_COUNT = "file_count";
+    protected static final String PROXY_HOST = "proxy_host";
+    protected static final String PROXY_PORT = "proxy_port";
 
     protected static final String USER_CACHE_SIZE = "user_cache_size";
     protected static final String BOT_CACHE_SIZE = "bot_cache_size";
@@ -73,13 +81,7 @@ public class SlackClient implements Closeable  {
     protected static final String DEFAULT_CACHE_SIZE = "10000";
 
     protected final Boolean includePrivate;
-
-    protected final ConversationsClient conversations;
-    protected final UsersClient users;
-    protected final FilesClient files;
-    protected final BotsClient bots;
-    protected final ChatClient chat;
-    protected final TeamClient team;
+    protected final Authentication authentication;
     protected Map<String, String> paramMap;
     protected LoadingCache<String, User> usersCache;
     protected LoadingCache<String, Bot> botsCache;
@@ -93,13 +95,18 @@ public class SlackClient implements Closeable  {
         }
 
         this.paramMap = paramMap;
-        this.includePrivate = isIncludePrivate(paramMap);
-        this.conversations = new ConversationsClient(token);
-        this.users = new UsersClient(token);
-        this.files = new FilesClient(token);
-        this.bots = new BotsClient(token);
-        this.chat = new ChatClient(token);
-        this.team = new TeamClient(token);
+        includePrivate = isIncludePrivate(paramMap);
+
+        authentication = new Authentication(token);
+
+        final String httpProxyHost = getProxyHost(paramMap);
+        final String httpProxyPort = getProxyPort(paramMap);
+        if (!httpProxyHost.isEmpty() ) {
+            if (httpProxyPort.isEmpty()) {
+                throw new SlackDataStoreException("parameter " + "'" + PROXY_PORT + "' required.");
+            }
+            authentication.setHttpProxy(httpProxyHost, Integer.parseInt(httpProxyPort));
+        }
 
         usersCache = CacheBuilder
                 .newBuilder()
@@ -107,7 +114,7 @@ public class SlackClient implements Closeable  {
                 .build(new CacheLoader<String, User>() {
                            @Override
                            public User load(final String key) {
-                               return users.info(key).execute().getUser();
+                               return usersInfo(key).execute().getUser();
                            }
                        }
                 );
@@ -117,7 +124,7 @@ public class SlackClient implements Closeable  {
                 .build(new CacheLoader<String, Bot>() {
                            @Override
                            public Bot load(final String key) {
-                               return bots.info().bot(key).execute().getBot();
+                               return botsInfo().bot(key).execute().getBot();
                            }
                        }
                 );
@@ -127,7 +134,7 @@ public class SlackClient implements Closeable  {
                 .build(new CacheLoader<String, Channel>() {
                            @Override
                            public Channel load(final String key) {
-                               return conversations.info(key).execute().getChannel();
+                               return conversationsInfo(key).execute().getChannel();
                            }
                        }
                 );
@@ -140,6 +147,51 @@ public class SlackClient implements Closeable  {
             channelsCache.put(channel.getId(), channel);
             channelsCache.put(channel.getName(), channel);
         });
+    }
+
+    public BotsInfoRequest botsInfo() {
+        return new BotsInfoRequest(authentication);
+    }
+
+    public ChatGetPermalinkRequest chatGetPermalink(final String channel, final String ts) {
+        return new ChatGetPermalinkRequest(authentication, channel, ts);
+    }
+
+
+    public ConversationsListRequest conversationsList() {
+        return new ConversationsListRequest(authentication);
+    }
+
+    public ConversationsHistoryRequest conversationsHistory(final String channel) {
+        return new ConversationsHistoryRequest(authentication, channel);
+    }
+
+    public ConversationsInfoRequest conversationsInfo(final String channel) {
+        return new ConversationsInfoRequest(authentication, channel);
+    }
+
+    public ConversationsRepliesRequest conversationsReplies(final String channel, final String ts) {
+        return new ConversationsRepliesRequest(authentication, channel, ts);
+    }
+
+    public FilesListRequest filesList() {
+        return new FilesListRequest(authentication);
+    }
+
+    public FilesInfoRequest filesInfo(final String file) {
+        return new FilesInfoRequest(authentication, file);
+    }
+
+    public TeamInfoRequest teamInfo() {
+        return new TeamInfoRequest(authentication);
+    }
+
+    public UsersListRequest usersList() {
+        return new UsersListRequest(authentication);
+    }
+
+    public UsersInfoRequest usersInfo(final String user) {
+        return new UsersInfoRequest(authentication, user);
     }
 
     @Override
@@ -161,12 +213,26 @@ public class SlackClient implements Closeable  {
         return paramMap.getOrDefault(INCLUDE_PRIVATE_PARAM, Constants.FALSE).equalsIgnoreCase(Constants.TRUE);
     }
 
+    protected String getProxyHost(final Map<String, String> paramMap) {
+        if (paramMap.containsKey(PROXY_HOST)) {
+            return paramMap.get(PROXY_HOST);
+        }
+        return StringUtil.EMPTY;
+    }
+
+    protected String getProxyPort(final Map<String, String> paramMap) {
+        if (paramMap.containsKey(PROXY_PORT)) {
+            return paramMap.get(PROXY_PORT);
+        }
+        return StringUtil.EMPTY;
+    }
+
     protected String getTypes() {
         return includePrivate ? "public_channel,private_channel" : "public_channel";
     }
 
     public Team getTeam() {
-        return team.info().execute().getTeam();
+        return teamInfo().execute().getTeam();
     }
 
     public Bot getBot(final String botName) throws ExecutionException {
@@ -182,7 +248,7 @@ public class SlackClient implements Closeable  {
     }
 
     public String getPermalink(final String channelId, final String threadTs) {
-        return chat.getPermalink(channelId, threadTs).execute().getPermalink();
+        return chatGetPermalink(channelId, threadTs).execute().getPermalink();
     }
 
     public CurlResponse getFileResponse(final String fileUrl) {
@@ -210,17 +276,17 @@ public class SlackClient implements Closeable  {
     }
 
     public void getChannelFiles(final String channelId, final Integer count, final Consumer<File> consumer) {
-        FilesListResponse response = files.list().channel(channelId).types(getTypes()).count(count).execute();
+        FilesListResponse response = filesList().channel(channelId).types(getTypes()).count(count).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"files.list\": {}", response.getError());
+                logger.warn("Slack API error occured on \"files.list\": {}", response.error());
                 return;
             }
             response.getFiles().forEach(consumer);
             if (response.getPaging().getPage() >= response.getPaging().getTotal()) {
                 break;
             }
-            response = files.list().channel(channelId).count(count).page(response.getPaging().getPage() + 1).execute();
+            response = filesList().channel(channelId).count(count).page(response.getPaging().getPage() + 1).execute();
         }
     }
 
@@ -229,10 +295,10 @@ public class SlackClient implements Closeable  {
     }
 
     public void getAllChannels(final Integer limit, final Consumer<Channel> consumer) {
-        ConversationsListResponse response = conversations.list().types(getTypes()).limit(limit).execute();
+        ConversationsListResponse response = conversationsList().types(getTypes()).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.list\": {}", response.getError());
+                logger.warn("Slack API error occured on \"conversations.list\": {}", response.error());
                 return;
             }
             response.getChannels().forEach(consumer);
@@ -240,7 +306,7 @@ public class SlackClient implements Closeable  {
             if (nextCursor.isEmpty()) {
                 break;
             }
-            response = conversations.list().types(getTypes()).limit(limit).cursor(nextCursor).execute();
+            response = conversationsList().types(getTypes()).limit(limit).cursor(nextCursor).execute();
         }
     }
 
@@ -249,17 +315,17 @@ public class SlackClient implements Closeable  {
     }
 
     public void getChannelMessages(final String channelId, final Integer limit, final Consumer<Message> consumer) {
-        ConversationsHistoryResponse response = conversations.history(channelId).limit(limit).execute();
+        ConversationsHistoryResponse response = conversationsHistory(channelId).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.history\": {}", response.getError());
+                logger.warn("Slack API error occured on \"conversations.history\": {}", response.error());
                 return;
             }
             response.getMessages().forEach(consumer);
             if (!response.hasMore()) {
                 break;
             }
-            response = conversations.history(channelId).limit(limit).cursor(response.getResponseMetadata().getNextCursor())
+            response = conversationsHistory(channelId).limit(limit).cursor(response.getResponseMetadata().getNextCursor())
                     .execute();
         }
     }
@@ -269,10 +335,10 @@ public class SlackClient implements Closeable  {
     }
 
     public void getMessageReplies(final String channelId, final String threadTs, final Integer limit, final Consumer<Message> consumer) {
-        ConversationsRepliesResponse response = conversations.replies(channelId, threadTs).limit(limit).execute();
+        ConversationsRepliesResponse response = conversationsReplies(channelId, threadTs).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.replies\": {}", response.getError());
+                logger.warn("Slack API error occured on \"conversations.replies\": {}", response.error());
                 return;
             }
             final List<Message> messages = response.getMessages();
@@ -286,7 +352,7 @@ public class SlackClient implements Closeable  {
             if (!response.hasMore()) {
                 break;
             }
-            response = conversations.replies(channelId, threadTs).limit(limit)
+            response = conversationsReplies(channelId, threadTs).limit(limit)
                     .cursor(response.getResponseMetadata().getNextCursor()).execute();
         }
     }
@@ -296,10 +362,10 @@ public class SlackClient implements Closeable  {
     }
 
     public void getUsers(final Integer limit, final Consumer<User> consumer) {
-        UsersListResponse response = users.list().limit(limit).execute();
+        UsersListResponse response = usersList().limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"users.list\": {}", response.getError());
+                logger.warn("Slack API error occured on \"users.list\": {}", response.error());
                 return;
             }
             response.getMembers().forEach(consumer);
@@ -307,7 +373,7 @@ public class SlackClient implements Closeable  {
             if (nextCursor.isEmpty()) {
                 break;
             }
-            response = users.list().limit(limit).cursor(nextCursor).execute();
+            response = usersList().limit(limit).cursor(nextCursor).execute();
         }
     }
 

@@ -16,6 +16,7 @@
 package org.codelibs.fess.ds.slack.api;
 
 import java.io.IOException;
+import java.net.Proxy;
 import java.util.function.Function;
 
 import org.codelibs.curl.Curl;
@@ -32,17 +33,17 @@ public abstract class Request<T extends Response> {
     public static final Function<String, CurlRequest> DELETE = Curl::delete;
 
     protected static final String SLACK_API_ENDPOINT = "https://slack.com/api/";
+    protected static final ObjectMapper mapper = new ObjectMapper();
 
-    protected final String token;
+    protected Authentication authentication;
 
-    public Request(final String token) {
-        this.token = token;
+    public Request(final Authentication authentication) {
+        this.authentication = authentication;
     }
 
     public abstract T execute();
 
     public T parseResponse(final String content, final Class<T> valueType) {
-        final ObjectMapper mapper = new ObjectMapper();
         try {
             return mapper.readValue(content, valueType);
         } catch (final IOException e) {
@@ -56,6 +57,11 @@ public abstract class Request<T extends Response> {
         if (path != null) {
             buf.append(path);
         }
-        return method.apply(buf.toString()).header("Authorization", "Bearer " + token);
+        final CurlRequest request = method.apply(buf.toString()).header("Authorization", "Bearer " + authentication.getToken());
+        final Proxy httpProxy = authentication.getHttpProxy();
+        if (httpProxy != null) {
+            request.proxy(httpProxy);
+        }
+        return request;
     }
 }

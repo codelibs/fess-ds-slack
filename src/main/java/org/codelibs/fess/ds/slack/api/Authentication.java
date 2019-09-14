@@ -13,18 +13,31 @@
  * either express or implied. See the License for the specific language
  * governing permissions and limitations under the License.
  */
-package org.codelibs.fess.ds.slack.api.method.bots;
+package org.codelibs.fess.ds.slack.api;
 
-import org.codelibs.fess.ds.slack.api.AbstractClient;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 
-public class BotsClient extends AbstractClient {
+public class Authentication {
 
-    public BotsClient(final String token) {
-        super(token);
+    protected String token;
+
+    protected Proxy httpProxy;
+
+    public Authentication(final String token) {
+        this.token = token;
     }
 
-    public BotsInfoRequest info() {
-        return new BotsInfoRequest(token);
+    public String getToken() {
+        return token;
+    }
+
+    public void setHttpProxy(final String httpProxyHost, final Integer httpProxyPort) {
+        this.httpProxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(httpProxyHost, httpProxyPort));
+    }
+
+    public Proxy getHttpProxy() {
+        return httpProxy;
     }
 
 }

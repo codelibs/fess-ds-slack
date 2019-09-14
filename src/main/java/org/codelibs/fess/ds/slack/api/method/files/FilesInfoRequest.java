@@ -16,6 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.files;
 
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
 public class FilesInfoRequest extends Request<FilesInfoResponse> {
@@ -26,8 +27,8 @@ public class FilesInfoRequest extends Request<FilesInfoResponse> {
     protected Integer page;
     protected String cursor;
 
-    public FilesInfoRequest(final String token, final String file) {
-        super(token);
+    public FilesInfoRequest(final Authentication authentication, final String file) {
+        super(authentication);
         this.file = file;
     }
 

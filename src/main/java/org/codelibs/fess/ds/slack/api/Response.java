@@ -24,11 +24,15 @@ public abstract class Response {
     protected Boolean ok;
     protected String error;
 
-    public Boolean getOk() {
+    public Boolean ok() {
         return ok;
     }
 
-    public Boolean ok() {
+    public String error() {
+        return error;
+    }
+
+    public Boolean getOk() {
         return ok;
     }
 

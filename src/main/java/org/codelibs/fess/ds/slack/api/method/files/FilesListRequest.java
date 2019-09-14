@@ -16,6 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.files;
 
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
 public class FilesListRequest extends Request<FilesListResponse> {
@@ -28,8 +29,8 @@ public class FilesListRequest extends Request<FilesListResponse> {
     protected Long tsFrom;
     protected Long tsTo;
 
-    public FilesListRequest(final String token) {
-        super(token);
+    public FilesListRequest(final Authentication authentication) {
+        super(authentication);
     }
 
     @Override

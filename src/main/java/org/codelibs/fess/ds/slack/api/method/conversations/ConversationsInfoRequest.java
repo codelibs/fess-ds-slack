@@ -16,6 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.conversations;
 
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
 public class ConversationsInfoRequest extends Request<ConversationsInfoResponse> {
@@ -23,8 +24,8 @@ public class ConversationsInfoRequest extends Request<ConversationsInfoResponse>
     protected final String channel;
     protected Boolean includeLocale;
 
-    public ConversationsInfoRequest(final String token, final String channel) {
-        super(token);
+    public ConversationsInfoRequest(final Authentication authentication, final String channel) {
+        super(authentication);
         this.channel = channel;
     }
 

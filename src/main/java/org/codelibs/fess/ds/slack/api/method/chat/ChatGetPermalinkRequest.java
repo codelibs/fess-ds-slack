@@ -16,6 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.chat;
 
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
 public class ChatGetPermalinkRequest extends Request<ChatGetPermalinkResponse> {
@@ -23,8 +24,8 @@ public class ChatGetPermalinkRequest extends Request<ChatGetPermalinkResponse> {
     protected final String channel;
     protected final String ts;
 
-    public ChatGetPermalinkRequest(final String token, final String channel, final String ts) {
-        super(token);
+    public ChatGetPermalinkRequest(final Authentication authentication, final String channel, final String ts) {
+        super(authentication);
         this.channel = channel;
         this.ts = ts;
     }

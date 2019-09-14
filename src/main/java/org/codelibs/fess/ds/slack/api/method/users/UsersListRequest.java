@@ -16,6 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.users;
 
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
 public class UsersListRequest extends Request<UsersListResponse> {
@@ -25,8 +26,8 @@ public class UsersListRequest extends Request<UsersListResponse> {
     protected Boolean presence;
     protected Integer limit;
 
-    public UsersListRequest(final String token) {
-        super(token);
+    public UsersListRequest(final Authentication authentication) {
+        super(authentication);
     }
 
     @Override

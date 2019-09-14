@@ -16,14 +16,15 @@
 package org.codelibs.fess.ds.slack.api.method.bots;
 
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
 public class BotsInfoRequest extends Request<BotsInfoResponse> {
 
     protected String bot;
 
-    public BotsInfoRequest(final String token) {
-        super(token);
+    public BotsInfoRequest(final Authentication authenctication) {
+        super(authenctication);
     }
 
     @Override

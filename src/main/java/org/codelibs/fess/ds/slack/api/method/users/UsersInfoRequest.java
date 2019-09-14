@@ -16,6 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.users;
 
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
 public class UsersInfoRequest extends Request<UsersInfoResponse> {
@@ -23,8 +24,8 @@ public class UsersInfoRequest extends Request<UsersInfoResponse> {
     protected final String user;
     protected Boolean includeLocale;
 
-    public UsersInfoRequest(final String token, final String user) {
-        super(token);
+    public UsersInfoRequest(final Authentication authentication, final String user) {
+        super(authentication);
         this.user = user;
     }
 
