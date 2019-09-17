@@ -63,16 +63,16 @@ public class SlackClient implements Closeable  {
     protected static final String CHANNELS_PARAM = "channels";
     protected static final String CHANNELS_ALL = "*all";
     protected static final String CHANNELS_SEPARATOR = ",";
-    protected static final String CHANNEL_COUNT = "channel_count";
-    protected static final String USER_COUNT = "user_count";
-    protected static final String MESSAGE_COUNT = "message_count";
-    protected static final String FILE_COUNT = "file_count";
-    protected static final String PROXY_HOST = "proxy_host";
-    protected static final String PROXY_PORT = "proxy_port";
+    protected static final String CHANNEL_COUNT_PARAM = "channel_count";
+    protected static final String USER_COUNT_PARAM = "user_count";
+    protected static final String MESSAGE_COUNT_PARAM = "message_count";
+    protected static final String FILE_COUNT_PARAM = "file_count";
+    protected static final String PROXY_HOST_PARAM = "proxy_host";
+    protected static final String PROXY_PORT_PARAM = "proxy_port";
 
-    protected static final String USER_CACHE_SIZE = "user_cache_size";
-    protected static final String BOT_CACHE_SIZE = "bot_cache_size";
-    protected static final String CHANNEL_CACHE_SIZE = "channel_cache_size";
+    protected static final String USER_CACHE_SIZE_PARAM = "user_cache_size";
+    protected static final String BOT_CACHE_SIZE_PARAM = "bot_cache_size";
+    protected static final String CHANNEL_CACHE_SIZE_PARAM = "channel_cache_size";
 
     protected static final String DEFAULT_CHANNEL_COUNT = "100";
     protected static final String DEFAULT_USER_COUNT = "100";
@@ -103,14 +103,18 @@ public class SlackClient implements Closeable  {
         final String httpProxyPort = getProxyPort(paramMap);
         if (!httpProxyHost.isEmpty() ) {
             if (httpProxyPort.isEmpty()) {
-                throw new SlackDataStoreException("parameter " + "'" + PROXY_PORT + "' required.");
+                throw new SlackDataStoreException("parameter " + "'" + PROXY_PORT_PARAM + "' required.");
             }
-            authentication.setHttpProxy(httpProxyHost, Integer.parseInt(httpProxyPort));
+            try {
+                authentication.setHttpProxy(httpProxyHost, Integer.parseInt(httpProxyPort));
+            } catch (final NumberFormatException e) {
+                throw new SlackDataStoreException("parameter " + "'" + PROXY_PORT_PARAM + "' invalid.", e);
+            }
         }
 
         usersCache = CacheBuilder
                 .newBuilder()
-                .maximumSize(Integer.parseInt(paramMap.getOrDefault(USER_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
+                .maximumSize(Integer.parseInt(paramMap.getOrDefault(USER_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, User>() {
                            @Override
                            public User load(final String key) {
@@ -120,7 +124,7 @@ public class SlackClient implements Closeable  {
                 );
         botsCache = CacheBuilder
                 .newBuilder()
-                .maximumSize(Integer.parseInt(paramMap.getOrDefault(BOT_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
+                .maximumSize(Integer.parseInt(paramMap.getOrDefault(BOT_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, Bot>() {
                            @Override
                            public Bot load(final String key) {
@@ -130,7 +134,7 @@ public class SlackClient implements Closeable  {
                 );
         channelsCache = CacheBuilder
                 .newBuilder()
-                .maximumSize(Integer.parseInt(paramMap.getOrDefault(CHANNEL_CACHE_SIZE, DEFAULT_CACHE_SIZE)))
+                .maximumSize(Integer.parseInt(paramMap.getOrDefault(CHANNEL_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, Channel>() {
                            @Override
                            public Channel load(final String key) {
@@ -214,15 +218,15 @@ public class SlackClient implements Closeable  {
     }
 
     protected String getProxyHost(final Map<String, String> paramMap) {
-        if (paramMap.containsKey(PROXY_HOST)) {
-            return paramMap.get(PROXY_HOST);
+        if (paramMap.containsKey(PROXY_HOST_PARAM)) {
+            return paramMap.get(PROXY_HOST_PARAM);
         }
         return StringUtil.EMPTY;
     }
 
     protected String getProxyPort(final Map<String, String> paramMap) {
-        if (paramMap.containsKey(PROXY_PORT)) {
-            return paramMap.get(PROXY_PORT);
+        if (paramMap.containsKey(PROXY_PORT_PARAM)) {
+            return paramMap.get(PROXY_PORT_PARAM);
         }
         return StringUtil.EMPTY;
     }
@@ -272,7 +276,7 @@ public class SlackClient implements Closeable  {
     }
 
     public void getChannelFiles(final String channelId, final Consumer<File> consumer) {
-        getChannelFiles(channelId, Integer.parseInt(paramMap.getOrDefault(FILE_COUNT, DEFAULT_FILE_COUNT)), consumer);
+        getChannelFiles(channelId, Integer.parseInt(paramMap.getOrDefault(FILE_COUNT_PARAM, DEFAULT_FILE_COUNT)), consumer);
     }
 
     public void getChannelFiles(final String channelId, final Integer count, final Consumer<File> consumer) {
@@ -291,7 +295,7 @@ public class SlackClient implements Closeable  {
     }
 
     public void getAllChannels(final Consumer<Channel> consumer) {
-        getAllChannels(Integer.parseInt(paramMap.getOrDefault(CHANNEL_COUNT, DEFAULT_CHANNEL_COUNT)), consumer);
+        getAllChannels(Integer.parseInt(paramMap.getOrDefault(CHANNEL_COUNT_PARAM, DEFAULT_CHANNEL_COUNT)), consumer);
     }
 
     public void getAllChannels(final Integer limit, final Consumer<Channel> consumer) {
@@ -311,7 +315,7 @@ public class SlackClient implements Closeable  {
     }
 
     public void getChannelMessages(final String channelId, final Consumer<Message> consumer) {
-        getChannelMessages(channelId, Integer.parseInt(paramMap.getOrDefault(MESSAGE_COUNT, DEFAULT_MESSAGE_COUNT)), consumer);
+        getChannelMessages(channelId, Integer.parseInt(paramMap.getOrDefault(MESSAGE_COUNT_PARAM, DEFAULT_MESSAGE_COUNT)), consumer);
     }
 
     public void getChannelMessages(final String channelId, final Integer limit, final Consumer<Message> consumer) {
@@ -331,7 +335,7 @@ public class SlackClient implements Closeable  {
     }
 
     public void getMessageReplies(final String channelId, final String threadTs, final Consumer<Message> consumer) {
-        getMessageReplies(channelId, threadTs, Integer.parseInt(paramMap.getOrDefault(MESSAGE_COUNT, DEFAULT_MESSAGE_COUNT)), consumer);
+        getMessageReplies(channelId, threadTs, Integer.parseInt(paramMap.getOrDefault(MESSAGE_COUNT_PARAM, DEFAULT_MESSAGE_COUNT)), consumer);
     }
 
     public void getMessageReplies(final String channelId, final String threadTs, final Integer limit, final Consumer<Message> consumer) {
@@ -358,7 +362,7 @@ public class SlackClient implements Closeable  {
     }
 
     public void getUsers(final Consumer<User> consumer) {
-        getUsers(Integer.parseInt(paramMap.getOrDefault(USER_COUNT, DEFAULT_USER_COUNT)), consumer);
+        getUsers(Integer.parseInt(paramMap.getOrDefault(USER_COUNT_PARAM, DEFAULT_USER_COUNT)), consumer);
     }
 
     public void getUsers(final Integer limit, final Consumer<User> consumer) {

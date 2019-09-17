@@ -39,8 +39,12 @@ import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.dbflute.utflute.lastaflute.LastaFluteTestCase;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class SlackClientTest extends LastaFluteTestCase {
+
+    private static Logger logger = LoggerFactory.getLogger(SlackClientTest.class);
 
     @Override
     protected String prepareConfigFile() {
@@ -82,97 +86,97 @@ public class SlackClientTest extends LastaFluteTestCase {
     }
 
     protected void doConversationsListTest(final SlackClient client) {
-        System.out.println("----------ConversationsList----------");
-        System.out.println("Channels: ");
+        logger.info("----------ConversationsList----------");
+        logger.info("Channels: ");
         for (final Channel channel : client.conversationsList().limit(5).execute().getChannels()) {
-            System.out.println("#" + channel.getName());
+            logger.info("#" + channel.getName());
         }
     }
 
     protected void doConversationsHistoryTest(final SlackClient client) {
-        System.out.println("----------ConversationsHistory----------");
+        logger.info("----------ConversationsHistory----------");
         final Channel channel = client.conversationsList().limit(1).execute().getChannels().get(0);
-        System.out.println("History of #" + channel.getName());
+        logger.info("History of #" + channel.getName());
         final ConversationsHistoryResponse response = client.conversationsHistory(channel.getId()).limit(5).execute();
         for (final Message message : response.getMessages()) {
-            System.out.println(message.getUser() + ": " + message.getText());
+            logger.info(message.getUser() + ": " + message.getText());
         }
-        System.out.println("hasMore: " + response.hasMore());
+        logger.info("hasMore: " + response.hasMore());
     }
 
     protected void doConversationsInfoTest(final SlackClient client) {
-        System.out.println("----------ConversationsInfo----------");
+        logger.info("----------ConversationsInfo----------");
         final String id = client.conversationsList().limit(1).execute().getChannels().get(0).getId();
-        System.out.println("Channel: " + id);
+        logger.info("Channel: " + id);
         final Channel channel = client.conversationsInfo(id).execute().getChannel();
-        System.out.println("#" + channel.getName());
+        logger.info("#" + channel.getName());
     }
 
     protected void doConversationsRepliesTest(final SlackClient client, final String channel, final String ts) {
-        System.out.println("----------ConversationsReplies----------");
+        logger.info("----------ConversationsReplies----------");
         final ConversationsRepliesResponse response = client.conversationsReplies(channel, ts).execute();
         final List<Message> messages = response.getMessages();
         for (int i = 1; i < messages.size(); i++) {
-            System.out.println(messages.get(i).getUser() + ": " + messages.get(i).getText());
+            logger.info(messages.get(i).getUser() + ": " + messages.get(i).getText());
         }
-        System.out.println("hasMore: " + response.hasMore());
+        logger.info("hasMore: " + response.hasMore());
     }
 
     protected void doUsersListTest(final SlackClient client) {
-        System.out.println("----------UsersList----------");
-        System.out.println("Users: ");
+        logger.info("----------UsersList----------");
+        logger.info("Users: ");
         final UsersListResponse response = client.usersList().limit(5).execute();
         for (final User user : response.getMembers()) {
-            System.out.println(user.getProfile().getDisplayName());
+            logger.info(user.getProfile().getDisplayName());
         }
-        System.out.println("next_cursor: " + response.getResponseMetadata().getNextCursor());
+        logger.info("next_cursor: " + response.getResponseMetadata().getNextCursor());
     }
 
     protected void doUsersInfoTest(final SlackClient client) {
-        System.out.println("----------UsersInfo----------");
+        logger.info("----------UsersInfo----------");
         final String id = client.usersList().limit(1).execute().getMembers().get(0).getId();
-        System.out.println("User: " + id);
+        logger.info("User: " + id);
         final User user = client.usersInfo(id).execute().getUser();
-        System.out.println(user.getProfile().getDisplayName());
+        logger.info(user.getProfile().getDisplayName());
     }
 
     protected void doFilesListTest(final SlackClient client) {
-        System.out.println("----------FilesList----------");
-        System.out.println("Files: ");
+        logger.info("----------FilesList----------");
+        logger.info("Files: ");
         final FilesListResponse response = client.filesList().count(5).execute();
         for (final File file : response.getFiles()) {
-            System.out.println(file.getName() + "  " + file.getMimetype());
+            logger.info(file.getName() + "  " + file.getMimetype());
         }
-        System.out.println("count: " + response.getPaging().getCount());
+        logger.info("count: " + response.getPaging().getCount());
     }
 
     protected void doFilesInfoTest(final SlackClient client) {
-        System.out.println("----------FilesInfo----------");
+        logger.info("----------FilesInfo----------");
         final String id = client.filesList().count(1).execute().getFiles().get(0).getId();
-        System.out.println("File: " + id);
+        logger.info("File: " + id);
         final File file = client.filesInfo(id).execute().getFile();
-        System.out.println(file.getName() + "  " + file.getMimetype());
+        logger.info(file.getName() + "  " + file.getMimetype());
     }
 
     protected void doBotsInfoTest(final SlackClient client, final String id) {
-        System.out.println("----------BotsInfo----------");
-        System.out.println("Bot: " + id);
+        logger.info("----------BotsInfo----------");
+        logger.info("Bot: " + id);
         final Bot bot = client.botsInfo().bot(id).execute().getBot();
-        System.out.println(bot.getName());
+        logger.info(bot.getName());
     }
 
     protected void doChatGetPermalinkTest(final SlackClient client, final String channel, final String ts) {
-        System.out.println("----------ChatGetPermalink----------");
-        System.out.println("Channel: " + channel + ", Timestamp: " + ts);
+        logger.info("----------ChatGetPermalink----------");
+        logger.info("Channel: " + channel + ", Timestamp: " + ts);
         final String link = client.chatGetPermalink(channel, ts).execute().getPermalink();
-        System.out.println(link);
+        logger.info(link);
     }
 
     protected void doTeamInfoTest(final SlackClient client) {
-        System.out.println("----------TeamInfo----------");
-        System.out.println("Team: ");
+        logger.info("----------TeamInfo----------");
+        logger.info("Team: ");
         final Team team = client.teamInfo().execute().getTeam();
-        System.out.println(team.getName() + " https://" + team.getDomain() + ".slack.com/");
+        logger.info(team.getName() + " https://" + team.getDomain() + ".slack.com/");
     }
 
     public void testConversationsList() {

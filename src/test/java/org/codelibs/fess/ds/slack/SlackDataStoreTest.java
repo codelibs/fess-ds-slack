@@ -23,8 +23,12 @@ import org.codelibs.fess.es.config.exentity.DataConfig;
 import org.codelibs.fess.mylasta.direction.FessConfig;
 import org.codelibs.fess.util.ComponentUtil;
 import org.dbflute.utflute.lastaflute.LastaFluteTestCase;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class SlackDataStoreTest extends LastaFluteTestCase {
+
+    private static Logger logger = LoggerFactory.getLogger(SlackClientTest.class);
 
     public SlackDataStore dataStore;
 
@@ -60,7 +64,7 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
         final IndexUpdateCallback callback = new IndexUpdateCallback() {
             @Override
             public void store(Map<String, String> paramMap, Map<String, Object> dataMap) {
-                System.out.println(dataMap);
+                logger.info("[{}.{}] dataMap = {}", getClass(), getName(), dataMap);
             }
 
             @Override
