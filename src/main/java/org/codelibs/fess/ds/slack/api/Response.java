@@ -23,13 +23,10 @@ public abstract class Response {
 
     protected Boolean ok;
     protected String error;
+    protected String responseBody;
 
-    public Boolean ok() {
-        return ok;
-    }
-
-    public String error() {
-        return error;
+    public boolean ok() {
+        return ok == null ? false : ok;
     }
 
     public Boolean getOk() {
@@ -38,6 +35,15 @@ public abstract class Response {
 
     public String getError() {
         return error;
+    }
+
+    public String responseBody() {
+        return responseBody;
+    }
+
+    public <T extends Response> T responseBody(String responseBody) {
+        this.responseBody = responseBody;
+        return (T) this;
     }
 
 }

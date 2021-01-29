@@ -45,7 +45,7 @@ public abstract class Request<T extends Response> {
 
     public T parseResponse(final String content, final Class<T> valueType) {
         try {
-            return mapper.readValue(content, valueType);
+            return mapper.readValue(content, valueType).responseBody(content);
         } catch (final IOException e) {
             throw new SlackDataStoreException("Failed to parse: \"" + content + "\"", e);
         }

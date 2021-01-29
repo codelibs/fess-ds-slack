@@ -283,7 +283,7 @@ public class SlackClient implements Closeable  {
         FilesListResponse response = filesList().channel(channelId).types(getTypes()).count(count).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"files.list\": {}", response.error());
+                logger.warn("Slack API error occured on \"files.list\": {}", response.responseBody());
                 return;
             }
             response.getFiles().forEach(consumer);
@@ -302,7 +302,7 @@ public class SlackClient implements Closeable  {
         ConversationsListResponse response = conversationsList().types(getTypes()).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.list\": {}", response.error());
+                logger.warn("Slack API error occured on \"conversations.list\": {}", response.responseBody());
                 return;
             }
             response.getChannels().forEach(consumer);
@@ -322,7 +322,7 @@ public class SlackClient implements Closeable  {
         ConversationsHistoryResponse response = conversationsHistory(channelId).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.history\": {}", response.error());
+                logger.warn("Slack API error occured on \"conversations.history\": {}", response.responseBody());
                 return;
             }
             response.getMessages().forEach(consumer);
@@ -342,7 +342,7 @@ public class SlackClient implements Closeable  {
         ConversationsRepliesResponse response = conversationsReplies(channelId, threadTs).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.replies\": {}", response.error());
+                logger.warn("Slack API error occured on \"conversations.replies\": {}", response.responseBody());
                 return;
             }
             final List<Message> messages = response.getMessages();
@@ -369,7 +369,7 @@ public class SlackClient implements Closeable  {
         UsersListResponse response = usersList().limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"users.list\": {}", response.error());
+                logger.warn("Slack API error occured on \"users.list\": {}", response.responseBody());
                 return;
             }
             response.getMembers().forEach(consumer);
