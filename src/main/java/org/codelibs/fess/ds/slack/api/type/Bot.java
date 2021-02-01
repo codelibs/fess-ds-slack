@@ -35,8 +35,8 @@ public class Bot {
         return name;
     }
 
-    public Boolean isDeleted() {
-        return deleted;
+    public boolean isDeleted() {
+        return deleted == null ? false : deleted;
     }
 
 }

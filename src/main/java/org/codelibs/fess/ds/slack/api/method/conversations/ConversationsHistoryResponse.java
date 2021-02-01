@@ -44,8 +44,8 @@ public class ConversationsHistoryResponse extends Response {
         return hasMore;
     }
 
-    public Boolean hasMore() {
-        return hasMore;
+    public boolean hasMore() {
+        return hasMore == null ? false : hasMore;
     }
 
 }

@@ -40,8 +40,8 @@ public class ConversationsRepliesResponse extends Response {
         return responseMetadata;
     }
 
-    public Boolean hasMore() {
-        return hasMore;
+    public boolean hasMore() {
+        return hasMore == null ? false : hasMore;
     }
 
 }

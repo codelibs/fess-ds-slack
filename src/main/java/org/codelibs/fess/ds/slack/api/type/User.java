@@ -38,8 +38,8 @@ public class User {
         return name;
     }
 
-    public Boolean isDeleted() {
-        return deleted;
+    public boolean isDeleted() {
+        return deleted == null ? false : deleted;
     }
 
     public String getRealName() {

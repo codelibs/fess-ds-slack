@@ -74,7 +74,7 @@ public class Message {
         return files;
     }
 
-    public Boolean isThreadBroadcast() {
+    public boolean isThreadBroadcast() {
         return isThreadBroadcast != null ? isThreadBroadcast : false;
     }
 

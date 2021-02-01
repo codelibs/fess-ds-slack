@@ -41,16 +41,16 @@ public class Channel {
         return name;
     }
 
-    public Boolean isChannel() {
-        return isChannel;
+    public boolean isChannel() {
+        return isChannel == null ? false : isChannel;
     }
 
-    public Boolean isArchived() {
-        return isArchived;
+    public boolean isArchived() {
+        return isArchived == null ? false : isArchived;
     }
 
-    public Boolean isPrivate() {
-        return isPrivate;
+    public boolean isPrivate() {
+        return isPrivate == null ? false : isPrivate;
     }
 
     public List<String> getMembers() {
