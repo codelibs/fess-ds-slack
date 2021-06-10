@@ -83,7 +83,6 @@ public class SlackDataStore extends AbstractDataStore {
 
     protected String extractorName = "tikaExtractor";
 
-
     @Override
     protected String getName() {
         return this.getClass().getSimpleName();
@@ -95,7 +94,7 @@ public class SlackDataStore extends AbstractDataStore {
 
     @Override
     protected void storeData(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, String> paramMap,
-                             final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap) {
+            final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap) {
         final Map<String, Object> configMap = new HashMap<>();
         configMap.put(MAX_FILESIZE, getMaxFilesize(paramMap));
         configMap.put(IGNORE_ERROR, isIgnoreError(paramMap));
@@ -111,9 +110,11 @@ public class SlackDataStore extends AbstractDataStore {
             final Team team = client.getTeam();
             final boolean fileCrawl = (Boolean) configMap.get(FILE_CRAWL);
             client.getChannels(channel -> {
-                processChannelMessages(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team, channel);
+                processChannelMessages(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
+                        channel);
                 if (fileCrawl) {
-                    processChannelFiles(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team, channel);
+                    processChannelFiles(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
+                            channel);
                 }
             });
 
@@ -123,7 +124,7 @@ public class SlackDataStore extends AbstractDataStore {
 
             executorService.shutdown();
             executorService.awaitTermination(60, TimeUnit.SECONDS);
-        } catch(final InterruptedException e) {
+        } catch (final InterruptedException e) {
             if (logger.isDebugEnabled()) {
                 logger.debug("Interrupted.", e);
             }
@@ -146,8 +147,8 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     private List<String> getSupportedMimeTypes(final Map<String, String> paramMap) {
-        return Arrays.stream(StringUtil.split(paramMap.getOrDefault(SUPPORTED_MIMETYPES, ".*"), ","))
-                .map(String::trim).collect(Collectors.toList());
+        return Arrays.stream(StringUtil.split(paramMap.getOrDefault(SUPPORTED_MIMETYPES, ".*"), ",")).map(String::trim)
+                .collect(Collectors.toList());
     }
 
     protected boolean isFileCrawl(final Map<String, String> paramMap) {
@@ -179,43 +180,43 @@ public class SlackDataStore extends AbstractDataStore {
                 new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
-    protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,final Map<String, Object> configMap,
-                                          final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-                                          final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel) {
+    protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
+            final Map<String, Object> configMap, final Map<String, String> paramMap, final Map<String, String> scriptMap,
+            final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client, final Team team,
+            final Channel channel) {
         client.getChannelMessages(channel.getId(), message -> {
-                    executorService.execute(() -> {
-                        processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
-                        if (message.getThreadTs() != null) {
-                            processMessageReplies(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
-                        }
-                    });
+            executorService.execute(() -> {
+                processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+                if (message.getThreadTs() != null) {
+                    processMessageReplies(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel,
+                            message);
                 }
-        );
+            });
+        });
     }
 
-    protected void processChannelFiles(final DataConfig dataConfig, final IndexUpdateCallback callback,final Map<String, Object> configMap,
-                                       final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-                                       final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel) {
+    protected void processChannelFiles(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
+            final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
+            final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel) {
         client.getChannelFiles(channel.getId(), file -> {
-                    executorService.execute(() -> {
-                        processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, file);
-                    });
-                }
-        );
+            executorService.execute(() -> {
+                processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, file);
+            });
+        });
     }
 
     protected void processMessageReplies(final DataConfig dataConfig, final IndexUpdateCallback callback,
-                                         final Map<String, Object> configMap, final Map<String, String> paramMap, final Map<String, String> scriptMap,
-                                         final Map<String, Object> defaultDataMap, final SlackClient client, final Team team, final Channel channel,
-                                         final Message parentMessage) {
+            final Map<String, Object> configMap, final Map<String, String> paramMap, final Map<String, String> scriptMap,
+            final Map<String, Object> defaultDataMap, final SlackClient client, final Team team, final Channel channel,
+            final Message parentMessage) {
         client.getMessageReplies(channel.getId(), parentMessage.getThreadTs(), message -> {
             processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
         });
     }
 
     protected void processMessage(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
-                                  final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-                                  final SlackClient client, final Team team, final Channel channel, final Message message) {
+            final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
+            final SlackClient client, final Team team, final Channel channel, final Message message) {
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         final String url = getMessagePermalink(client, team, channel, message);
         try {
@@ -249,8 +250,9 @@ public class SlackDataStore extends AbstractDataStore {
                 logger.debug("messageMap: {}", messageMap);
             }
 
+            final String scriptType = getScriptType(paramMap);
             for (final Map.Entry<String, String> entry : scriptMap.entrySet()) {
-                final Object convertValue = convertValue(entry.getValue(), resultMap);
+                final Object convertValue = convertValue(scriptType, entry.getValue(), resultMap);
                 if (convertValue != null) {
                     dataMap.put(entry.getKey(), convertValue);
                 }
@@ -289,9 +291,9 @@ public class SlackDataStore extends AbstractDataStore {
         }
     }
 
-    protected void processFile(final DataConfig dataConfig, final IndexUpdateCallback callback,final Map<String, Object> configMap,
-                               final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-                               final SlackClient client, final Team team, final Channel channel, final File file) {
+    protected void processFile(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
+            final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
+            final SlackClient client, final Team team, final Channel channel, final File file) {
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         final String url = file.getPermalink();
         try {
@@ -313,8 +315,8 @@ public class SlackDataStore extends AbstractDataStore {
 
             final long maxFilesize = (Long) configMap.get(MAX_FILESIZE);
             if (file.getSize() > maxFilesize) {
-                throw new MaxLengthExceededException("The content length (" + file.getSize() + " byte) is over " + maxFilesize
-                        + " byte. The url is " + url);
+                throw new MaxLengthExceededException(
+                        "The content length (" + file.getSize() + " byte) is over " + maxFilesize + " byte. The url is " + url);
             }
 
             final List<String> supportedMimetypes = (List<String>) configMap.getOrDefault(SUPPORTED_MIMETYPES, EMPTY_LIST);
@@ -340,8 +342,9 @@ public class SlackDataStore extends AbstractDataStore {
                 logger.debug("fileMap: {}", fileMap);
             }
 
+            final String scriptType = getScriptType(paramMap);
             for (final Map.Entry<String, String> entry : scriptMap.entrySet()) {
-                final Object convertValue = convertValue(entry.getValue(), resultMap);
+                final Object convertValue = convertValue(scriptType, entry.getValue(), resultMap);
                 if (convertValue != null) {
                     dataMap.put(entry.getKey(), convertValue);
                 }
@@ -402,10 +405,11 @@ public class SlackDataStore extends AbstractDataStore {
                     return client.getBot(message.getBotId()).getName();
                 } else if (message.getSubtype().equals("file_comment")) {
                     final User user = client.getUser(message.getComment().getUser());
-                    return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName() : user.getProfile().getRealName();
+                    return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName()
+                            : user.getProfile().getRealName();
                 }
             }
-        } catch(final Exception e) {
+        } catch (final Exception e) {
             if (logger.isDebugEnabled()) {
                 logger.debug("Failed to get a username from message.", e);
             }
@@ -418,7 +422,7 @@ public class SlackDataStore extends AbstractDataStore {
             if (file.getUser() != null) {
                 return getUsername(client, file.getUser());
             }
-        } catch(final Exception e) {
+        } catch (final Exception e) {
             if (logger.isDebugEnabled()) {
                 logger.debug("Failed to get a username from message.", e);
             }
@@ -429,13 +433,13 @@ public class SlackDataStore extends AbstractDataStore {
     protected String getUsername(final SlackClient client, final String userId) {
         try {
             final User user = client.getUser(userId);
-            if(user.getProfile().getDisplayName() != null) {
+            if (user.getProfile().getDisplayName() != null) {
                 return user.getProfile().getDisplayName();
             }
-            if(user.getRealName() != null) {
+            if (user.getRealName() != null) {
                 return user.getRealName();
             }
-            if(user.getName() != null) {
+            if (user.getName() != null) {
                 return user.getName();
             }
         } catch (ExecutionException e) {
@@ -472,7 +476,8 @@ public class SlackDataStore extends AbstractDataStore {
             final String fileUrl = file.getUrlPrivateDownload();
             try (final CurlResponse response = client.getFileResponse(fileUrl)) {
                 if (response.getHttpStatusCode() != 200) {
-                    throw new SlackDataStoreException("HTTP Status " + response.getHttpStatusCode() + " : failed to get the file from " + fileUrl);
+                    throw new SlackDataStoreException(
+                            "HTTP Status " + response.getHttpStatusCode() + " : failed to get the file from " + fileUrl);
                 }
                 try (final InputStream in = response.getContentAsStream()) {
                     Extractor extractor = ComponentUtil.getExtractorFactory().getExtractor(mimeType);

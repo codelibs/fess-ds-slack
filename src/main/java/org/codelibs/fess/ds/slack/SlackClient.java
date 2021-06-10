@@ -54,7 +54,7 @@ import org.codelibs.fess.ds.slack.api.type.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class SlackClient implements Closeable  {
+public class SlackClient implements Closeable {
 
     private static final Logger logger = LoggerFactory.getLogger(SlackClient.class);
 
@@ -101,7 +101,7 @@ public class SlackClient implements Closeable  {
 
         final String httpProxyHost = getProxyHost(paramMap);
         final String httpProxyPort = getProxyPort(paramMap);
-        if (!httpProxyHost.isEmpty() ) {
+        if (!httpProxyHost.isEmpty()) {
             if (httpProxyPort.isEmpty()) {
                 throw new SlackDataStoreException("parameter " + "'" + PROXY_PORT_PARAM + "' required.");
             }
@@ -112,42 +112,35 @@ public class SlackClient implements Closeable  {
             }
         }
 
-        usersCache = CacheBuilder
-                .newBuilder()
-                .maximumSize(Integer.parseInt(paramMap.getOrDefault(USER_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
-                .build(new CacheLoader<String, User>() {
-                           @Override
-                           public User load(final String key) {
-                               return usersInfo(key).execute().getUser();
-                           }
-                       }
-                );
-        botsCache = CacheBuilder
-                .newBuilder()
-                .maximumSize(Integer.parseInt(paramMap.getOrDefault(BOT_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
+        usersCache =
+                CacheBuilder.newBuilder().maximumSize(Integer.parseInt(paramMap.getOrDefault(USER_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
+                        .build(new CacheLoader<String, User>() {
+                            @Override
+                            public User load(final String key) {
+                                return usersInfo(key).execute().getUser();
+                            }
+                        });
+        botsCache = CacheBuilder.newBuilder().maximumSize(Integer.parseInt(paramMap.getOrDefault(BOT_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, Bot>() {
-                           @Override
-                           public Bot load(final String key) {
-                               return botsInfo().bot(key).execute().getBot();
-                           }
-                       }
-                );
-        channelsCache = CacheBuilder
-                .newBuilder()
-                .maximumSize(Integer.parseInt(paramMap.getOrDefault(CHANNEL_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
-                .build(new CacheLoader<String, Channel>() {
-                           @Override
-                           public Channel load(final String key) {
-                               return conversationsInfo(key).execute().getChannel();
-                           }
-                       }
-                );
+                    @Override
+                    public Bot load(final String key) {
+                        return botsInfo().bot(key).execute().getBot();
+                    }
+                });
+        channelsCache =
+                CacheBuilder.newBuilder().maximumSize(Integer.parseInt(paramMap.getOrDefault(CHANNEL_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
+                        .build(new CacheLoader<String, Channel>() {
+                            @Override
+                            public Channel load(final String key) {
+                                return conversationsInfo(key).execute().getChannel();
+                            }
+                        });
         // Initialize caches to avoid exceeding the rate limit of the Slack API
-        getUsers( user -> {
+        getUsers(user -> {
             usersCache.put(user.getId(), user);
             usersCache.put(user.getName(), user);
         });
-        getAllChannels( channel -> {
+        getAllChannels(channel -> {
             channelsCache.put(channel.getId(), channel);
             channelsCache.put(channel.getName(), channel);
         });
@@ -160,7 +153,6 @@ public class SlackClient implements Closeable  {
     public ChatGetPermalinkRequest chatGetPermalink(final String channel, final String ts) {
         return new ChatGetPermalinkRequest(authentication, channel, ts);
     }
-
 
     public ConversationsListRequest conversationsList() {
         return new ConversationsListRequest(authentication);
@@ -257,8 +249,7 @@ public class SlackClient implements Closeable  {
 
     public CurlResponse getFileResponse(final String fileUrl) {
         return Curl.get(fileUrl).header("Authorization", "Bearer " + getToken(paramMap))
-                .header("Content-type", "application/x-www-form-urlencoded ")
-                .execute();
+                .header("Content-type", "application/x-www-form-urlencoded ").execute();
     }
 
     public void getChannels(final Consumer<Channel> consumer) {
@@ -329,13 +320,13 @@ public class SlackClient implements Closeable  {
             if (!response.hasMore()) {
                 break;
             }
-            response = conversationsHistory(channelId).limit(limit).cursor(response.getResponseMetadata().getNextCursor())
-                    .execute();
+            response = conversationsHistory(channelId).limit(limit).cursor(response.getResponseMetadata().getNextCursor()).execute();
         }
     }
 
     public void getMessageReplies(final String channelId, final String threadTs, final Consumer<Message> consumer) {
-        getMessageReplies(channelId, threadTs, Integer.parseInt(paramMap.getOrDefault(MESSAGE_COUNT_PARAM, DEFAULT_MESSAGE_COUNT)), consumer);
+        getMessageReplies(channelId, threadTs, Integer.parseInt(paramMap.getOrDefault(MESSAGE_COUNT_PARAM, DEFAULT_MESSAGE_COUNT)),
+                consumer);
     }
 
     public void getMessageReplies(final String channelId, final String threadTs, final Integer limit, final Consumer<Message> consumer) {
@@ -356,8 +347,8 @@ public class SlackClient implements Closeable  {
             if (!response.hasMore()) {
                 break;
             }
-            response = conversationsReplies(channelId, threadTs).limit(limit)
-                    .cursor(response.getResponseMetadata().getNextCursor()).execute();
+            response =
+                    conversationsReplies(channelId, threadTs).limit(limit).cursor(response.getResponseMetadata().getNextCursor()).execute();
         }
     }
 
