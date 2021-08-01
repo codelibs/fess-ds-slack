@@ -15,11 +15,12 @@
  */
 package org.codelibs.fess.ds.slack.api.method.bots;
 
+import org.codelibs.fess.ds.slack.api.Response;
+import org.codelibs.fess.ds.slack.api.type.Bot;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategy;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
-import org.codelibs.fess.ds.slack.api.Response;
-import org.codelibs.fess.ds.slack.api.type.Bot;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategy.SnakeCaseStrategy.class)

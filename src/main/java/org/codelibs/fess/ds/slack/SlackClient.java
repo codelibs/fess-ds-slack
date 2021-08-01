@@ -21,9 +21,6 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
 import org.codelibs.core.lang.StringUtil;
 import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlResponse;
@@ -53,6 +50,10 @@ import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 
 public class SlackClient implements Closeable {
 
@@ -206,7 +207,7 @@ public class SlackClient implements Closeable {
     }
 
     protected Boolean isIncludePrivate(final Map<String, String> paramMap) {
-        return paramMap.getOrDefault(INCLUDE_PRIVATE_PARAM, Constants.FALSE).equalsIgnoreCase(Constants.TRUE);
+        return Constants.TRUE.equalsIgnoreCase(paramMap.getOrDefault(INCLUDE_PRIVATE_PARAM, Constants.FALSE));
     }
 
     protected String getProxyHost(final Map<String, String> paramMap) {
@@ -253,7 +254,7 @@ public class SlackClient implements Closeable {
     }
 
     public void getChannels(final Consumer<Channel> consumer) {
-        if (!paramMap.containsKey(CHANNELS_PARAM) || paramMap.get(CHANNELS_PARAM).equals(CHANNELS_ALL)) {
+        if (!paramMap.containsKey(CHANNELS_PARAM) || CHANNELS_ALL.equals(paramMap.get(CHANNELS_PARAM))) {
             getAllChannels(consumer);
         } else {
             for (final String name : paramMap.get(CHANNELS_PARAM).split(CHANNELS_SEPARATOR)) {

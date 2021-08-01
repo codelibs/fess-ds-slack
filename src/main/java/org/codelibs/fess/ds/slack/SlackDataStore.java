@@ -15,6 +15,8 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import static java.util.Collections.EMPTY_LIST;
+
 import java.io.InputStream;
 import java.util.Arrays;
 import java.util.Date;
@@ -48,11 +50,10 @@ import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.codelibs.fess.es.config.exentity.DataConfig;
 import org.codelibs.fess.exception.DataStoreCrawlingException;
+import org.codelibs.fess.exception.DataStoreException;
 import org.codelibs.fess.util.ComponentUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import static java.util.Collections.EMPTY_LIST;
 
 public class SlackDataStore extends AbstractDataStore {
 
@@ -125,9 +126,7 @@ public class SlackDataStore extends AbstractDataStore {
             executorService.shutdown();
             executorService.awaitTermination(60, TimeUnit.SECONDS);
         } catch (final InterruptedException e) {
-            if (logger.isDebugEnabled()) {
-                logger.debug("Interrupted.", e);
-            }
+            throw new DataStoreException("Interrupted.", e);
         } finally {
             executorService.shutdownNow();
         }
@@ -143,7 +142,7 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     protected boolean isIgnoreError(final Map<String, String> paramMap) {
-        return paramMap.getOrDefault(IGNORE_ERROR, Constants.TRUE).equalsIgnoreCase(Constants.TRUE);
+        return Constants.TRUE.equalsIgnoreCase(paramMap.getOrDefault(IGNORE_ERROR, Constants.TRUE));
     }
 
     private List<String> getSupportedMimeTypes(final Map<String, String> paramMap) {
@@ -152,7 +151,7 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     protected boolean isFileCrawl(final Map<String, String> paramMap) {
-        return paramMap.getOrDefault(FILE_CRAWL, Constants.FALSE).equalsIgnoreCase(Constants.TRUE);
+        return Constants.TRUE.equalsIgnoreCase(paramMap.getOrDefault(FILE_CRAWL, Constants.FALSE));
     }
 
     protected UrlFilter getUrlFilter(final Map<String, String> paramMap) {
@@ -401,9 +400,10 @@ public class SlackDataStore extends AbstractDataStore {
                 return getUsername(client, message.getUser());
             }
             if (message.getSubtype() != null) {
-                if (message.getSubtype().equals("bot_message")) {
+                if ("bot_message".equals(message.getSubtype())) {
                     return client.getBot(message.getBotId()).getName();
-                } else if (message.getSubtype().equals("file_comment")) {
+                }
+                if ("file_comment".equals(message.getSubtype())) {
                     final User user = client.getUser(message.getComment().getUser());
                     return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName()
                             : user.getProfile().getRealName();
@@ -442,7 +442,7 @@ public class SlackDataStore extends AbstractDataStore {
             if (user.getName() != null) {
                 return user.getName();
             }
-        } catch (ExecutionException e) {
+        } catch (final ExecutionException e) {
             logger.warn("Failed to get username from user.", e);
         }
         return userId;
@@ -493,9 +493,8 @@ public class SlackDataStore extends AbstractDataStore {
                 if (ignoreError) {
                     logger.warn("Failed to get contents: " + file.getName(), e);
                     return StringUtil.EMPTY;
-                } else {
-                    throw new DataStoreCrawlingException(file.getPermalink(), "Failed to get contents: " + file.getName(), e);
                 }
+                throw new DataStoreCrawlingException(file.getPermalink(), "Failed to get contents: " + file.getName(), e);
             }
         }
         return StringUtil.EMPTY;

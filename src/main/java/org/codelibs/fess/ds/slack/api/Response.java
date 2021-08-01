@@ -41,7 +41,7 @@ public abstract class Response {
         return responseBody;
     }
 
-    public <T extends Response> T responseBody(String responseBody) {
+    public <T extends Response> T responseBody(final String responseBody) {
         this.responseBody = responseBody;
         return (T) this;
     }

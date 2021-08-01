@@ -15,10 +15,11 @@
  */
 package org.codelibs.fess.ds.slack.api.method.chat;
 
+import org.codelibs.fess.ds.slack.api.Response;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategy;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
-import org.codelibs.fess.ds.slack.api.Response;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategy.SnakeCaseStrategy.class)

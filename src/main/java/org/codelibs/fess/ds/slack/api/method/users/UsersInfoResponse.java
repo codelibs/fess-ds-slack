@@ -15,11 +15,12 @@
  */
 package org.codelibs.fess.ds.slack.api.method.users;
 
+import org.codelibs.fess.ds.slack.api.Response;
+import org.codelibs.fess.ds.slack.api.type.User;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategy;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
-import org.codelibs.fess.ds.slack.api.Response;
-import org.codelibs.fess.ds.slack.api.type.User;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategy.SnakeCaseStrategy.class)
