@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.codelibs.fess.ds.callback.IndexUpdateCallback;
+import org.codelibs.fess.entity.DataStoreParams;
 import org.codelibs.fess.es.config.exentity.DataConfig;
 import org.codelibs.fess.mylasta.direction.FessConfig;
 import org.codelibs.fess.util.ComponentUtil;
@@ -63,7 +64,7 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
         final DataConfig dataConfig = new DataConfig();
         final IndexUpdateCallback callback = new IndexUpdateCallback() {
             @Override
-            public void store(Map<String, String> paramMap, Map<String, Object> dataMap) {
+            public void store(DataStoreParams paramMap, Map<String, Object> dataMap) {
                 logger.info("[{}.{}] dataMap = {}", getClass(), getName(), dataMap);
             }
 
@@ -81,7 +82,7 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
             public void commit() {
             }
         };
-        final Map<String, String> paramMap = new HashMap<>();
+        final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("token", "");
         paramMap.put("channels", "");
         final Map<String, String> scriptMap = new HashMap<>();

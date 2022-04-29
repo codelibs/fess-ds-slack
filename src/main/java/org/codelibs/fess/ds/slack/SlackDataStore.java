@@ -48,9 +48,13 @@ import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
+import org.codelibs.fess.entity.DataStoreParams;
 import org.codelibs.fess.es.config.exentity.DataConfig;
 import org.codelibs.fess.exception.DataStoreCrawlingException;
 import org.codelibs.fess.exception.DataStoreException;
+import org.codelibs.fess.helper.CrawlerStatsHelper;
+import org.codelibs.fess.helper.CrawlerStatsHelper.StatsAction;
+import org.codelibs.fess.helper.CrawlerStatsHelper.StatsKeyObject;
 import org.codelibs.fess.util.ComponentUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,7 +98,7 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     @Override
-    protected void storeData(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, String> paramMap,
+    protected void storeData(final DataConfig dataConfig, final IndexUpdateCallback callback, final DataStoreParams paramMap,
             final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap) {
         final Map<String, Object> configMap = new HashMap<>();
         configMap.put(MAX_FILESIZE, getMaxFilesize(paramMap));
@@ -106,7 +110,7 @@ public class SlackDataStore extends AbstractDataStore {
             logger.debug("configMap: {}", configMap);
         }
 
-        final ExecutorService executorService = newFixedThreadPool(Integer.parseInt(paramMap.getOrDefault(NUMBER_OF_THREADS, "1")));
+        final ExecutorService executorService = newFixedThreadPool(Integer.parseInt(paramMap.getAsString(NUMBER_OF_THREADS, "1")));
         try (final SlackClient client = new SlackClient(paramMap)) {
             final Team team = client.getTeam();
             final boolean fileCrawl = (Boolean) configMap.get(FILE_CRAWL);
@@ -132,8 +136,8 @@ public class SlackDataStore extends AbstractDataStore {
         }
     }
 
-    protected long getMaxFilesize(final Map<String, String> paramMap) {
-        final String value = paramMap.get(MAX_FILESIZE);
+    protected long getMaxFilesize(final DataStoreParams paramMap) {
+        final String value = paramMap.getAsString(MAX_FILESIZE);
         try {
             return StringUtil.isNotBlank(value) ? Long.parseLong(value) : DEFAULT_MAX_FILESIZE;
         } catch (final NumberFormatException e) {
@@ -141,30 +145,30 @@ public class SlackDataStore extends AbstractDataStore {
         }
     }
 
-    protected boolean isIgnoreError(final Map<String, String> paramMap) {
-        return Constants.TRUE.equalsIgnoreCase(paramMap.getOrDefault(IGNORE_ERROR, Constants.TRUE));
+    protected boolean isIgnoreError(final DataStoreParams paramMap) {
+        return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(IGNORE_ERROR, Constants.TRUE));
     }
 
-    private List<String> getSupportedMimeTypes(final Map<String, String> paramMap) {
-        return Arrays.stream(StringUtil.split(paramMap.getOrDefault(SUPPORTED_MIMETYPES, ".*"), ",")).map(String::trim)
+    private List<String> getSupportedMimeTypes(final DataStoreParams paramMap) {
+        return Arrays.stream(StringUtil.split(paramMap.getAsString(SUPPORTED_MIMETYPES, ".*"), ",")).map(String::trim)
                 .collect(Collectors.toList());
     }
 
-    protected boolean isFileCrawl(final Map<String, String> paramMap) {
-        return Constants.TRUE.equalsIgnoreCase(paramMap.getOrDefault(FILE_CRAWL, Constants.FALSE));
+    protected boolean isFileCrawl(final DataStoreParams paramMap) {
+        return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(FILE_CRAWL, Constants.FALSE));
     }
 
-    protected UrlFilter getUrlFilter(final Map<String, String> paramMap) {
+    protected UrlFilter getUrlFilter(final DataStoreParams paramMap) {
         final UrlFilter urlFilter = ComponentUtil.getComponent(UrlFilter.class);
-        final String include = paramMap.get(INCLUDE_PATTERN);
+        final String include = paramMap.getAsString(INCLUDE_PATTERN);
         if (StringUtil.isNotBlank(include)) {
             urlFilter.addInclude(include);
         }
-        final String exclude = paramMap.get(EXCLUDE_PATTERN);
+        final String exclude = paramMap.getAsString(EXCLUDE_PATTERN);
         if (StringUtil.isNotBlank(exclude)) {
             urlFilter.addExclude(exclude);
         }
-        urlFilter.init(paramMap.get(Constants.CRAWLING_INFO_ID));
+        urlFilter.init(paramMap.getAsString(Constants.CRAWLING_INFO_ID));
         if (logger.isDebugEnabled()) {
             logger.debug("urlFilter: {}", urlFilter);
         }
@@ -180,7 +184,7 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
-            final Map<String, Object> configMap, final Map<String, String> paramMap, final Map<String, String> scriptMap,
+            final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
             final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client, final Team team,
             final Channel channel) {
         client.getChannelMessages(channel.getId(), message -> {
@@ -195,7 +199,7 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     protected void processChannelFiles(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
-            final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
+            final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel) {
         client.getChannelFiles(channel.getId(), file -> {
             executorService.execute(() -> {
@@ -205,7 +209,7 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     protected void processMessageReplies(final DataConfig dataConfig, final IndexUpdateCallback callback,
-            final Map<String, Object> configMap, final Map<String, String> paramMap, final Map<String, String> scriptMap,
+            final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
             final Map<String, Object> defaultDataMap, final SlackClient client, final Team team, final Channel channel,
             final Message parentMessage) {
         client.getMessageReplies(channel.getId(), parentMessage.getThreadTs(), message -> {
@@ -214,23 +218,27 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     protected void processMessage(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
-            final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
+            final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final SlackClient client, final Team team, final Channel channel, final Message message) {
+        final CrawlerStatsHelper crawlerStatsHelper = ComponentUtil.getCrawlerStatsHelper();
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         final String url = getMessagePermalink(client, team, channel, message);
+        final StatsKeyObject statsKey = new StatsKeyObject(url);
         try {
+            crawlerStatsHelper.begin(statsKey);
 
             final UrlFilter urlFilter = (UrlFilter) configMap.get(URL_FILTER);
             if (urlFilter != null && !urlFilter.match(url)) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("Not matched: {}", url);
                 }
+                crawlerStatsHelper.discard(statsKey);
                 return;
             }
 
             logger.info("Crawling URL: {}", url);
 
-            final Map<String, Object> resultMap = new LinkedHashMap<>(paramMap);
+            final Map<String, Object> resultMap = new LinkedHashMap<>(paramMap.asMap());
             final Map<String, Object> messageMap = new HashMap<>();
 
             final String messageText = getMessageText(message);
@@ -245,6 +253,8 @@ public class SlackDataStore extends AbstractDataStore {
             messageMap.put(MESSAGE_ATTACHMENTS, getMessageAttachmentsText(message));
             resultMap.put(MESSAGE, messageMap);
 
+            crawlerStatsHelper.record(statsKey, StatsAction.PREPARED);
+
             if (logger.isDebugEnabled()) {
                 logger.debug("messageMap: {}", messageMap);
             }
@@ -257,17 +267,24 @@ public class SlackDataStore extends AbstractDataStore {
                 }
             }
 
+            crawlerStatsHelper.record(statsKey, StatsAction.EVALUATED);
+
             if (logger.isDebugEnabled()) {
                 logger.debug("dataMap: {}", dataMap);
             }
 
+            if (dataMap.get("url") instanceof String statsUrl) {
+                statsKey.setUrl(statsUrl);
+            }
+
             callback.store(paramMap, dataMap);
+            crawlerStatsHelper.record(statsKey, StatsAction.FINISHED);
         } catch (final CrawlingAccessException e) {
-            logger.warn("Crawling Access Exception at : " + dataMap, e);
+            logger.warn("Crawling Access Exception at : {}", dataMap, e);
 
             Throwable target = e;
-            if (target instanceof MultipleCrawlingAccessException) {
-                final Throwable[] causes = ((MultipleCrawlingAccessException) target).getCauses();
+            if (target instanceof MultipleCrawlingAccessException ex) {
+                final Throwable[] causes = ex.getCauses();
                 if (causes.length > 0) {
                     target = causes[causes.length - 1];
                 }
@@ -283,25 +300,34 @@ public class SlackDataStore extends AbstractDataStore {
 
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
             failureUrlService.store(dataConfig, errorName, url, target);
+            crawlerStatsHelper.record(statsKey, StatsAction.ACCESS_EXCEPTION);
         } catch (final Throwable t) {
-            logger.warn("Crawling Access Exception at : " + dataMap, t);
+            logger.warn("Crawling Access Exception at : {}", dataMap, t);
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
             failureUrlService.store(dataConfig, t.getClass().getCanonicalName(), url, t);
+            crawlerStatsHelper.record(statsKey, StatsAction.EXCEPTION);
+        } finally {
+            crawlerStatsHelper.done(statsKey);
         }
     }
 
     protected void processFile(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
-            final Map<String, String> paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
+            final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final SlackClient client, final Team team, final Channel channel, final File file) {
+        final CrawlerStatsHelper crawlerStatsHelper = ComponentUtil.getCrawlerStatsHelper();
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         final String url = file.getPermalink();
+        final StatsKeyObject statsKey = new StatsKeyObject(url);
         try {
+            crawlerStatsHelper.begin(statsKey);
+
             final String mimeType = file.getMimetype();
             final UrlFilter urlFilter = (UrlFilter) configMap.get(URL_FILTER);
             if (urlFilter != null && !urlFilter.match(url)) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("Not matched: {}", url);
                 }
+                crawlerStatsHelper.discard(statsKey);
                 return;
             }
 
@@ -309,7 +335,7 @@ public class SlackDataStore extends AbstractDataStore {
 
             final boolean ignoreError = (Boolean) configMap.get(IGNORE_ERROR);
 
-            final Map<String, Object> resultMap = new LinkedHashMap<>(paramMap);
+            final Map<String, Object> resultMap = new LinkedHashMap<>(paramMap.asMap());
             final Map<String, Object> fileMap = new HashMap<>();
 
             final long maxFilesize = (Long) configMap.get(MAX_FILESIZE);
@@ -318,11 +344,12 @@ public class SlackDataStore extends AbstractDataStore {
                         "The content length (" + file.getSize() + " byte) is over " + maxFilesize + " byte. The url is " + url);
             }
 
-            final List<String> supportedMimetypes = (List<String>) configMap.getOrDefault(SUPPORTED_MIMETYPES, EMPTY_LIST);
-            if (supportedMimetypes.stream().noneMatch(mimeType::matches)) {
+            if (configMap.getOrDefault(SUPPORTED_MIMETYPES, EMPTY_LIST) instanceof List<?> supportedMimetypes
+                    && supportedMimetypes.stream().map(o -> o.toString()).noneMatch(mimeType::matches)) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("{} is not an indexing target.", mimeType);
                 }
+                crawlerStatsHelper.discard(statsKey);
                 return;
             }
 
@@ -337,6 +364,8 @@ public class SlackDataStore extends AbstractDataStore {
             fileMap.put(MESSAGE_ATTACHMENTS, "");
             resultMap.put(MESSAGE, fileMap);
 
+            crawlerStatsHelper.record(statsKey, StatsAction.PREPARED);
+
             if (logger.isDebugEnabled()) {
                 logger.debug("fileMap: {}", fileMap);
             }
@@ -348,17 +377,24 @@ public class SlackDataStore extends AbstractDataStore {
                     dataMap.put(entry.getKey(), convertValue);
                 }
             }
+
+            crawlerStatsHelper.record(statsKey, StatsAction.EVALUATED);
+
             if (logger.isDebugEnabled()) {
                 logger.debug("dataMap: {}", dataMap);
             }
 
+            if (dataMap.get("url") instanceof String statsUrl) {
+                statsKey.setUrl(statsUrl);
+            }
             callback.store(paramMap, dataMap);
+            crawlerStatsHelper.record(statsKey, StatsAction.FINISHED);
         } catch (final CrawlingAccessException e) {
-            logger.warn("Crawling Access Exception at : " + dataMap, e);
+            logger.warn("Crawling Access Exception at : {}", dataMap, e);
 
             Throwable target = e;
-            if (target instanceof MultipleCrawlingAccessException) {
-                final Throwable[] causes = ((MultipleCrawlingAccessException) target).getCauses();
+            if (target instanceof MultipleCrawlingAccessException ex) {
+                final Throwable[] causes = ex.getCauses();
                 if (causes.length > 0) {
                     target = causes[causes.length - 1];
                 }
@@ -374,10 +410,14 @@ public class SlackDataStore extends AbstractDataStore {
 
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
             failureUrlService.store(dataConfig, errorName, url, target);
+            crawlerStatsHelper.record(statsKey, StatsAction.ACCESS_EXCEPTION);
         } catch (final Throwable t) {
-            logger.warn("Crawling Access Exception at : " + dataMap, t);
+            logger.warn("Crawling Access Exception at : {}", dataMap, t);
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
             failureUrlService.store(dataConfig, t.getClass().getCanonicalName(), url, t);
+            crawlerStatsHelper.record(statsKey, StatsAction.EXCEPTION);
+        } finally {
+            crawlerStatsHelper.done(statsKey);
         }
     }
 

@@ -15,7 +15,6 @@
  */
 package org.codelibs.fess.ds.slack;
 
-import java.util.HashMap;
 import java.util.List;
 
 import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoRequest;
@@ -38,6 +37,7 @@ import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
+import org.codelibs.fess.entity.DataStoreParams;
 import org.dbflute.utflute.lastaflute.LastaFluteTestCase;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,7 +71,7 @@ public class SlackClientTest extends LastaFluteTestCase {
     }
 
     protected void doProductionTest() {
-        final SlackClient client = new SlackClient(new HashMap<>());
+        final SlackClient client = new SlackClient(new DataStoreParams());
         doConversationsListTest(client);
         doConversationsHistoryTest(client);
         doConversationsInfoTest(client);
