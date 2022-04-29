@@ -224,6 +224,7 @@ public class SlackDataStore extends AbstractDataStore {
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         final String url = getMessagePermalink(client, team, channel, message);
         final StatsKeyObject statsKey = new StatsKeyObject(url);
+        paramMap.put(Constants.CRAWLER_STATS_KEY, statsKey);
         try {
             crawlerStatsHelper.begin(statsKey);
 
@@ -318,6 +319,7 @@ public class SlackDataStore extends AbstractDataStore {
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         final String url = file.getPermalink();
         final StatsKeyObject statsKey = new StatsKeyObject(url);
+        paramMap.put(Constants.CRAWLER_STATS_KEY, statsKey);
         try {
             crawlerStatsHelper.begin(statsKey);
 
@@ -531,7 +533,7 @@ public class SlackDataStore extends AbstractDataStore {
                 }
             } catch (final Exception e) {
                 if (ignoreError) {
-                    logger.warn("Failed to get contents: " + file.getName(), e);
+                    logger.warn("Failed to get contents: {}", file.getName(), e);
                     return StringUtil.EMPTY;
                 }
                 throw new DataStoreCrawlingException(file.getPermalink(), "Failed to get contents: " + file.getName(), e);
