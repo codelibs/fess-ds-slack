@@ -31,6 +31,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import org.codelibs.core.exception.InterruptedRuntimeException;
 import org.codelibs.core.lang.StringUtil;
 import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.Constants;
@@ -51,7 +52,6 @@ import org.codelibs.fess.ds.slack.api.type.User;
 import org.codelibs.fess.entity.DataStoreParams;
 import org.codelibs.fess.es.config.exentity.DataConfig;
 import org.codelibs.fess.exception.DataStoreCrawlingException;
-import org.codelibs.fess.exception.DataStoreException;
 import org.codelibs.fess.helper.CrawlerStatsHelper;
 import org.codelibs.fess.helper.CrawlerStatsHelper.StatsAction;
 import org.codelibs.fess.helper.CrawlerStatsHelper.StatsKeyObject;
@@ -130,7 +130,7 @@ public class SlackDataStore extends AbstractDataStore {
             executorService.shutdown();
             executorService.awaitTermination(60, TimeUnit.SECONDS);
         } catch (final InterruptedException e) {
-            throw new DataStoreException("Interrupted.", e);
+            throw new InterruptedRuntimeException(e);
         } finally {
             executorService.shutdownNow();
         }
