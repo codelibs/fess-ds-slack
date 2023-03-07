@@ -522,14 +522,8 @@ public class SlackDataStore extends AbstractDataStore {
                             "HTTP Status " + response.getHttpStatusCode() + " : failed to get the file from " + fileUrl);
                 }
                 try (final InputStream in = response.getContentAsStream()) {
-                    Extractor extractor = ComponentUtil.getExtractorFactory().getExtractor(mimeType);
-                    if (extractor == null) {
-                        if (logger.isDebugEnabled()) {
-                            logger.debug("use a default extractor as {} by {}", extractorName, mimeType);
-                        }
-                        extractor = ComponentUtil.getComponent(extractorName);
-                    }
-                    return extractor.getText(in, null).getContent();
+                    return ComponentUtil.getExtractorFactory().builder(in, null).mimeType(mimeType).extractorName(extractorName).extract()
+                            .getContent();
                 }
             } catch (final Exception e) {
                 if (ignoreError) {
