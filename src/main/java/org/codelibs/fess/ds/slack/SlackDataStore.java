@@ -526,11 +526,15 @@ public class SlackDataStore extends AbstractDataStore {
                             .getContent();
                 }
             } catch (final Exception e) {
-                if (ignoreError) {
-                    logger.warn("Failed to get contents: {}", file.getName(), e);
-                    return StringUtil.EMPTY;
+                if (!ignoreError && !ComponentUtil.getFessConfig().isCrawlerIgnoreContentException()) {
+                    throw new DataStoreCrawlingException(file.getPermalink(), "Failed to get contents: " + file.getName(), e);
                 }
-                throw new DataStoreCrawlingException(file.getPermalink(), "Failed to get contents: " + file.getName(), e);
+                if (logger.isDebugEnabled()) {
+                    logger.warn("Failed to get contents: {}", file.getName(), e);
+                } else {
+                    logger.warn("Failed to get contents: {}. {}", file.getName(), e.getMessage());
+                }
+                return StringUtil.EMPTY;
             }
         }
         return StringUtil.EMPTY;
