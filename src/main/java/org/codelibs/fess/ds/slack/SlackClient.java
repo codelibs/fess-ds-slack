@@ -70,6 +70,7 @@ public class SlackClient implements Closeable {
     protected static final String FILE_COUNT_PARAM = "file_count";
     protected static final String PROXY_HOST_PARAM = "proxy_host";
     protected static final String PROXY_PORT_PARAM = "proxy_port";
+    protected static final String FILE_TYPES_PARAM = "file_types";
 
     protected static final String USER_CACHE_SIZE_PARAM = "user_cache_size";
     protected static final String BOT_CACHE_SIZE_PARAM = "bot_cache_size";
@@ -219,6 +220,10 @@ public class SlackClient implements Closeable {
         return includePrivate ? "public_channel,private_channel" : "public_channel";
     }
 
+    protected String getFileTypes() {
+        return paramMap.getAsString(FILE_TYPES_PARAM, "all");
+    }
+
     public Team getTeam() {
         return teamInfo().execute().getTeam();
     }
@@ -263,7 +268,7 @@ public class SlackClient implements Closeable {
     }
 
     public void getChannelFiles(final String channelId, final Integer count, final Consumer<File> consumer) {
-        FilesListResponse response = filesList().channel(channelId).types(getTypes()).count(count).execute();
+        FilesListResponse response = filesList().channel(channelId).types(getFileTypes()).count(count).execute();
         while (true) {
             if (!response.ok()) {
                 logger.warn("Slack API error occured on \"files.list\": {}", response.responseBody());
