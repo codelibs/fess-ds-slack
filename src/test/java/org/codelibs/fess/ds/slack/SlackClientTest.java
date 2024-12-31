@@ -17,6 +17,8 @@ package org.codelibs.fess.ds.slack;
 
 import java.util.List;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryRequest;
@@ -39,12 +41,10 @@ import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.codelibs.fess.entity.DataStoreParams;
 import org.dbflute.utflute.lastaflute.LastaFluteTestCase;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class SlackClientTest extends LastaFluteTestCase {
 
-    private static Logger logger = LoggerFactory.getLogger(SlackClientTest.class);
+    private static Logger logger = LogManager.getLogger(SlackClientTest.class);
 
     @Override
     protected String prepareConfigFile() {

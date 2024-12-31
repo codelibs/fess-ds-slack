@@ -18,18 +18,18 @@ package org.codelibs.fess.ds.slack;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.codelibs.fess.ds.callback.IndexUpdateCallback;
 import org.codelibs.fess.entity.DataStoreParams;
 import org.codelibs.fess.es.config.exentity.DataConfig;
 import org.codelibs.fess.mylasta.direction.FessConfig;
 import org.codelibs.fess.util.ComponentUtil;
 import org.dbflute.utflute.lastaflute.LastaFluteTestCase;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class SlackDataStoreTest extends LastaFluteTestCase {
 
-    private static Logger logger = LoggerFactory.getLogger(SlackClientTest.class);
+    private static Logger logger = LogManager.getLogger(SlackClientTest.class);
 
     public SlackDataStore dataStore;
 

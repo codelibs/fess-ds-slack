@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.codelibs.core.lang.StringUtil;
 import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlResponse;
@@ -48,8 +50,6 @@ import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.codelibs.fess.entity.DataStoreParams;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -57,7 +57,7 @@ import com.google.common.cache.LoadingCache;
 
 public class SlackClient implements Closeable {
 
-    private static final Logger logger = LoggerFactory.getLogger(SlackClient.class);
+    private static final Logger logger = LogManager.getLogger(SlackClient.class);
 
     protected static final String TOKEN_PARAM = "token";
     protected static final String INCLUDE_PRIVATE_PARAM = "include_private";
