@@ -51,11 +51,11 @@ import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.codelibs.fess.entity.DataStoreParams;
-import org.codelibs.fess.es.config.exentity.DataConfig;
 import org.codelibs.fess.exception.DataStoreCrawlingException;
 import org.codelibs.fess.helper.CrawlerStatsHelper;
 import org.codelibs.fess.helper.CrawlerStatsHelper.StatsAction;
 import org.codelibs.fess.helper.CrawlerStatsHelper.StatsKeyObject;
+import org.codelibs.fess.opensearch.config.exentity.DataConfig;
 import org.codelibs.fess.util.ComponentUtil;
 
 public class SlackDataStore extends AbstractDataStore {
