@@ -4,12 +4,12 @@
 	<artifactId>fess-ds-slack</artifactId>
 	<packaging>jar</packaging>
 	<name>Slack Data Store</name>
-	<version>15.1.0</version>
+	<version>15.1.1-SNAPSHOT</version>
 	<scm>
 		<connection>scm:git:git@github.com:codelibs/fess-ds-slack.git</connection>
 		<developerConnection>scm:git:git@github.com:codelibs/fess-ds-slack.git</developerConnection>
 		<url>https://github.com/codelibs/fess-ds-slack</url>
-	  <tag>fess-ds-slack-15.1.0</tag>
+	  <tag>HEAD</tag>
   </scm>
 	<parent>
 		<groupId>org.codelibs.fess</groupId>
