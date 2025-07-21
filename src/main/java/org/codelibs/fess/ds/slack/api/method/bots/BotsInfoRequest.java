@@ -19,10 +19,19 @@ import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
+/**
+ * Request to retrieve information about a specific bot in Slack.
+ */
 public class BotsInfoRequest extends Request<BotsInfoResponse> {
 
+    /** The bot ID to retrieve information for. */
     protected String bot;
 
+    /**
+     * Creates a new bots.info request with the specified authentication.
+     *
+     * @param authenctication the authentication credentials
+     */
     public BotsInfoRequest(final Authentication authenctication) {
         super(authenctication);
     }
@@ -32,6 +41,12 @@ public class BotsInfoRequest extends Request<BotsInfoResponse> {
         return parseResponse(request().execute().getContentAsString(), BotsInfoResponse.class);
     }
 
+    /**
+     * Sets the bot ID to retrieve information for.
+     *
+     * @param bot the bot ID
+     * @return this request instance for method chaining
+     */
     public BotsInfoRequest bot(final String bot) {
         this.bot = bot;
         return this;

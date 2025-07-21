@@ -25,17 +25,41 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Response class for the conversations.list API method.
+ * Contains a list of channels and pagination metadata.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class ConversationsListResponse extends Response {
 
+    /**
+     * Default constructor.
+     */
+    public ConversationsListResponse() {
+        super();
+    }
+
+    /** List of channels returned by the API */
     protected List<Channel> channels;
+
+    /** Metadata for pagination and response handling */
     protected ResponseMetadata responseMetadata;
 
+    /**
+     * Gets the list of channels.
+     *
+     * @return the list of channels
+     */
     public List<Channel> getChannels() {
         return channels;
     }
 
+    /**
+     * Gets the response metadata for pagination.
+     *
+     * @return the response metadata
+     */
     public ResponseMetadata getResponseMetadata() {
         return responseMetadata;
     }

@@ -19,44 +19,106 @@ import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
+/**
+ * Request class for the conversations.replies API method.
+ * Retrieves thread replies for a specific message in a channel.
+ */
 public class ConversationsRepliesRequest extends Request<ConversationsRepliesResponse> {
 
-    protected final String channel, ts;
-    protected String cursor, latest, oldest;
+    /** Channel ID containing the thread */
+    protected final String channel;
+
+    /** Timestamp of the parent message */
+    protected final String ts;
+
+    /** Pagination cursor for retrieving more results */
+    protected String cursor;
+
+    /** Latest timestamp to include in results */
+    protected String latest;
+
+    /** Oldest timestamp to include in results */
+    protected String oldest;
+
+    /** Maximum number of messages to return */
     protected Integer limit;
+
+    /** Whether to include messages with timestamps matching boundaries */
     protected Boolean inclusive;
 
+    /**
+     * Constructs a new conversations.replies request.
+     *
+     * @param authentication the authentication credentials
+     * @param channel the channel ID
+     * @param ts the timestamp of the parent message
+     */
     public ConversationsRepliesRequest(final Authentication authentication, final String channel, final String ts) {
         super(authentication);
         this.channel = channel;
         this.ts = ts;
     }
 
+    /**
+     * Executes the conversations.replies API request.
+     *
+     * @return the response containing thread replies
+     */
     @Override
     public ConversationsRepliesResponse execute() {
         return parseResponse(request().execute().getContentAsString(), ConversationsRepliesResponse.class);
     }
 
+    /**
+     * Sets the pagination cursor for retrieving more results.
+     *
+     * @param cursor the pagination cursor
+     * @return this request instance for method chaining
+     */
     public ConversationsRepliesRequest cursor(final String cursor) {
         this.cursor = cursor;
         return this;
     }
 
+    /**
+     * Sets whether to include messages with timestamps matching boundaries.
+     *
+     * @param inclusive whether to include boundary timestamps
+     * @return this request instance for method chaining
+     */
     public ConversationsRepliesRequest inclusive(final Boolean inclusive) {
         this.inclusive = inclusive;
         return this;
     }
 
+    /**
+     * Sets the latest timestamp to include in results.
+     *
+     * @param latest the latest timestamp
+     * @return this request instance for method chaining
+     */
     public ConversationsRepliesRequest latest(final String latest) {
         this.latest = latest;
         return this;
     }
 
+    /**
+     * Sets the maximum number of messages to return.
+     *
+     * @param limit the maximum number of messages
+     * @return this request instance for method chaining
+     */
     public ConversationsRepliesRequest limit(final Integer limit) {
         this.limit = limit;
         return this;
     }
 
+    /**
+     * Sets the oldest timestamp to include in results.
+     *
+     * @param oldest the oldest timestamp
+     * @return this request instance for method chaining
+     */
     public ConversationsRepliesRequest oldest(final String oldest) {
         this.oldest = oldest;
         return this;

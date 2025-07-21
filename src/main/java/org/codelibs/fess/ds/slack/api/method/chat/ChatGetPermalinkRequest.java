@@ -19,11 +19,23 @@ import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
+/**
+ * Request to retrieve a permalink URL for a specific message in Slack.
+ */
 public class ChatGetPermalinkRequest extends Request<ChatGetPermalinkResponse> {
 
+    /** The channel ID containing the message. */
     protected final String channel;
+    /** The timestamp of the message. */
     protected final String ts;
 
+    /**
+     * Creates a new chat.getPermalink request.
+     *
+     * @param authentication the authentication credentials
+     * @param channel the channel ID
+     * @param ts the message timestamp
+     */
     public ChatGetPermalinkRequest(final Authentication authentication, final String channel, final String ts) {
         super(authentication);
         this.channel = channel;

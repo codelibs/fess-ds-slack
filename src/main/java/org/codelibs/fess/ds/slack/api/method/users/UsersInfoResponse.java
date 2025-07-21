@@ -22,12 +22,28 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Response from the users.info API method containing user information.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class UsersInfoResponse extends Response {
 
+    /**
+     * Default constructor.
+     */
+    public UsersInfoResponse() {
+        super();
+    }
+
+    /** The user information returned by the API. */
     protected User user;
 
+    /**
+     * Returns the user information.
+     *
+     * @return the user details
+     */
     public User getUser() {
         return user;
     }

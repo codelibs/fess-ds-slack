@@ -18,24 +18,50 @@ package org.codelibs.fess.ds.slack.api;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 
+/**
+ * Handles authentication for Slack API requests including OAuth tokens and proxy configuration.
+ */
 public class Authentication {
 
+    /** OAuth access token for Slack API authentication. */
     protected String token;
 
+    /** HTTP proxy configuration for API requests. */
     protected Proxy httpProxy;
 
+    /**
+     * Creates a new Authentication instance with the specified OAuth token.
+     *
+     * @param token the OAuth access token for Slack API
+     */
     public Authentication(final String token) {
         this.token = token;
     }
 
+    /**
+     * Returns the OAuth access token.
+     *
+     * @return the OAuth access token
+     */
     public String getToken() {
         return token;
     }
 
+    /**
+     * Configures an HTTP proxy for API requests.
+     *
+     * @param httpProxyHost the proxy host
+     * @param httpProxyPort the proxy port
+     */
     public void setHttpProxy(final String httpProxyHost, final Integer httpProxyPort) {
         this.httpProxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(httpProxyHost, httpProxyPort));
     }
 
+    /**
+     * Returns the configured HTTP proxy.
+     *
+     * @return the HTTP proxy, or null if not configured
+     */
     public Proxy getHttpProxy() {
         return httpProxy;
     }

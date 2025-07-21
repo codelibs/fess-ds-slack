@@ -58,33 +58,81 @@ import org.codelibs.fess.helper.CrawlerStatsHelper.StatsKeyObject;
 import org.codelibs.fess.opensearch.config.exentity.DataConfig;
 import org.codelibs.fess.util.ComponentUtil;
 
+/**
+ * Slack Data Store implementation that enables Fess to crawl and index Slack content
+ * including channels, messages, and files. This data store connects to the Slack API
+ * to retrieve content and makes it searchable within Fess.
+ *
+ * <p>Supported content types:</p>
+ * <ul>
+ * <li>Channel messages with threading support</li>
+ * <li>File attachments with content extraction</li>
+ * <li>Bot messages and user posts</li>
+ * <li>Public and private channels (configurable)</li>
+ * </ul>
+ *
+ * <p>Configuration parameters:</p>
+ * <ul>
+ * <li>token: OAuth access token for Slack API</li>
+ * <li>channels: Specific channels to crawl or "*all" for all channels</li>
+ * <li>include_private: Whether to include private channels</li>
+ * <li>file_crawl: Whether to crawl file attachments</li>
+ * <li>number_of_threads: Thread pool size for parallel processing</li>
+ * </ul>
+ */
 public class SlackDataStore extends AbstractDataStore {
 
     private static final Logger logger = LogManager.getLogger(SlackDataStore.class);
 
+    /**
+     * Default constructor for SlackDataStore.
+     */
+    public SlackDataStore() {
+        super();
+    }
+
+    /** Default maximum file size for processing (10MB). */
     protected static final long DEFAULT_MAX_FILESIZE = 10000000L; // 10m
 
     // parameters
+    /** Parameter name for ignoring errors during crawling. */
     protected static final String IGNORE_ERROR = "ignore_error";
+    /** Parameter name for supported MIME types. */
     protected static final String SUPPORTED_MIMETYPES = "supported_mimetypes";
+    /** Parameter name for URL include patterns. */
     protected static final String INCLUDE_PATTERN = "include_pattern";
+    /** Parameter name for URL exclude patterns. */
     protected static final String EXCLUDE_PATTERN = "exclude_pattern";
+    /** Parameter name for URL filter configuration. */
     protected static final String URL_FILTER = "url_filter";
+    /** Parameter name for thread pool size. */
     protected static final String NUMBER_OF_THREADS = "number_of_threads";
+    /** Parameter name for maximum file size. */
     protected static final String MAX_FILESIZE = "max_filesize";
+    /** Parameter name for enabling file crawling. */
     protected static final String FILE_CRAWL = "file_crawl";
 
     // scripts
+    /** Script field name for message data. */
     protected static final String MESSAGE = "message";
+    /** Script field name for message title. */
     protected static final String MESSAGE_TITLE = "title";
+    /** Script field name for message text content. */
     protected static final String MESSAGE_TEXT = "text";
+    /** Script field name for team information. */
     protected static final String MESSAGE_TEAM = "team";
+    /** Script field name for message timestamp. */
     protected static final String MESSAGE_TIMESTAMP = "timestamp";
+    /** Script field name for user information. */
     protected static final String MESSAGE_USER = "user";
+    /** Script field name for channel information. */
     protected static final String MESSAGE_CHANNEL = "channel";
+    /** Script field name for message permalink. */
     protected static final String MESSAGE_PERMALINK = "permalink";
+    /** Script field name for message attachments. */
     protected static final String MESSAGE_ATTACHMENTS = "attachments";
 
+    /** Name of the content extractor to use for file processing. */
     protected String extractorName = "tikaExtractor";
 
     @Override
@@ -92,6 +140,11 @@ public class SlackDataStore extends AbstractDataStore {
         return this.getClass().getSimpleName();
     }
 
+    /**
+     * Sets the name of the content extractor to use for file processing.
+     *
+     * @param extractorName the extractor name
+     */
     public void setExtractorName(final String extractorName) {
         this.extractorName = extractorName;
     }
@@ -135,6 +188,12 @@ public class SlackDataStore extends AbstractDataStore {
         }
     }
 
+    /**
+     * Extracts the maximum file size configuration from parameters.
+     *
+     * @param paramMap the configuration parameters
+     * @return the maximum file size in bytes
+     */
     protected long getMaxFilesize(final DataStoreParams paramMap) {
         final String value = paramMap.getAsString(MAX_FILESIZE);
         try {
@@ -144,6 +203,12 @@ public class SlackDataStore extends AbstractDataStore {
         }
     }
 
+    /**
+     * Determines whether errors should be ignored during crawling.
+     *
+     * @param paramMap the configuration parameters
+     * @return true if errors should be ignored, false otherwise
+     */
     protected boolean isIgnoreError(final DataStoreParams paramMap) {
         return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(IGNORE_ERROR, Constants.TRUE));
     }
@@ -153,10 +218,22 @@ public class SlackDataStore extends AbstractDataStore {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Determines whether file crawling is enabled.
+     *
+     * @param paramMap the configuration parameters
+     * @return true if file crawling is enabled, false otherwise
+     */
     protected boolean isFileCrawl(final DataStoreParams paramMap) {
         return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(FILE_CRAWL, Constants.FALSE));
     }
 
+    /**
+     * Creates and configures a URL filter based on include/exclude patterns.
+     *
+     * @param paramMap the configuration parameters
+     * @return the configured URL filter
+     */
     protected UrlFilter getUrlFilter(final DataStoreParams paramMap) {
         final UrlFilter urlFilter = ComponentUtil.getComponent(UrlFilter.class);
         final String include = paramMap.getAsString(INCLUDE_PATTERN);
@@ -174,6 +251,12 @@ public class SlackDataStore extends AbstractDataStore {
         return urlFilter;
     }
 
+    /**
+     * Creates a fixed thread pool executor for parallel processing.
+     *
+     * @param nThreads the number of threads in the pool
+     * @return the configured executor service
+     */
     protected ExecutorService newFixedThreadPool(final int nThreads) {
         if (logger.isDebugEnabled()) {
             logger.debug("Executor Thread Pool: {}", nThreads);
@@ -182,6 +265,20 @@ public class SlackDataStore extends AbstractDataStore {
                 new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
+    /**
+     * Processes all messages in a channel, including threaded replies.
+     *
+     * @param dataConfig the data configuration
+     * @param callback the index update callback
+     * @param configMap the configuration map
+     * @param paramMap the parameter map
+     * @param scriptMap the script map
+     * @param defaultDataMap the default data map
+     * @param executorService the executor service for parallel processing
+     * @param client the Slack client
+     * @param team the team information
+     * @param channel the channel to process
+     */
     protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
             final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
             final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client, final Team team,
@@ -197,6 +294,20 @@ public class SlackDataStore extends AbstractDataStore {
         });
     }
 
+    /**
+     * Processes all files in a channel for indexing.
+     *
+     * @param dataConfig the data configuration
+     * @param callback the index update callback
+     * @param configMap the configuration map
+     * @param paramMap the parameter map
+     * @param scriptMap the script map
+     * @param defaultDataMap the default data map
+     * @param executorService the executor service for parallel processing
+     * @param client the Slack client
+     * @param team the team information
+     * @param channel the channel to process
+     */
     protected void processChannelFiles(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel) {
@@ -207,6 +318,20 @@ public class SlackDataStore extends AbstractDataStore {
         });
     }
 
+    /**
+     * Processes all replies to a threaded message.
+     *
+     * @param dataConfig the data configuration
+     * @param callback the index update callback
+     * @param configMap the configuration map
+     * @param paramMap the parameter map
+     * @param scriptMap the script map
+     * @param defaultDataMap the default data map
+     * @param client the Slack client
+     * @param team the team information
+     * @param channel the channel containing the thread
+     * @param parentMessage the parent message of the thread
+     */
     protected void processMessageReplies(final DataConfig dataConfig, final IndexUpdateCallback callback,
             final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
             final Map<String, Object> defaultDataMap, final SlackClient client, final Team team, final Channel channel,
@@ -216,6 +341,20 @@ public class SlackDataStore extends AbstractDataStore {
         });
     }
 
+    /**
+     * Processes a single message for indexing, extracting content and metadata.
+     *
+     * @param dataConfig the data configuration
+     * @param callback the index update callback
+     * @param configMap the configuration map
+     * @param paramMap the parameter map
+     * @param scriptMap the script map
+     * @param defaultDataMap the default data map
+     * @param client the Slack client
+     * @param team the team information
+     * @param channel the channel containing the message
+     * @param message the message to process
+     */
     protected void processMessage(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final SlackClient client, final Team team, final Channel channel, final Message message) {
@@ -311,6 +450,20 @@ public class SlackDataStore extends AbstractDataStore {
         }
     }
 
+    /**
+     * Processes a single file for indexing, extracting content and metadata.
+     *
+     * @param dataConfig the data configuration
+     * @param callback the index update callback
+     * @param configMap the configuration map
+     * @param paramMap the parameter map
+     * @param scriptMap the script map
+     * @param defaultDataMap the default data map
+     * @param client the Slack client
+     * @param team the team information
+     * @param channel the channel containing the file
+     * @param file the file to process
+     */
     protected void processFile(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final SlackClient client, final Team team, final Channel channel, final File file) {
@@ -422,19 +575,44 @@ public class SlackDataStore extends AbstractDataStore {
         }
     }
 
+    /**
+     * Extracts the text content from a message.
+     *
+     * @param message the message to extract text from
+     * @return the message text or empty string if null
+     */
     protected String getMessageText(final Message message) {
         final String text = message.getText();
         return text != null ? text : "";
     }
 
+    /**
+     * Converts a message timestamp to a Date object.
+     *
+     * @param message the message containing the timestamp
+     * @return the timestamp as a Date object
+     */
     protected Date getMessageTimestamp(final Message message) {
         return new Date(Math.round(Double.parseDouble(message.getTs()) * 1000));
     }
 
+    /**
+     * Converts a file timestamp to a Date object.
+     *
+     * @param file the file containing the timestamp
+     * @return the timestamp as a Date object
+     */
     protected Date getFileTimestamp(final File file) {
         return new Date(file.getTimestamp() * 1000L);
     }
 
+    /**
+     * Extracts the username from a message, handling different message types.
+     *
+     * @param client the Slack client for user lookups
+     * @param message the message to extract username from
+     * @return the username or empty string if not found
+     */
     public String getMessageUsername(final SlackClient client, final Message message) {
         try {
             if (message.getUser() != null) {
@@ -458,6 +636,13 @@ public class SlackDataStore extends AbstractDataStore {
         return StringUtil.EMPTY;
     }
 
+    /**
+     * Extracts the username from a file upload.
+     *
+     * @param client the Slack client for user lookups
+     * @param file the file to extract username from
+     * @return the username or empty string if not found
+     */
     public String getFileUsername(final SlackClient client, final File file) {
         try {
             if (file.getUser() != null) {
@@ -471,6 +656,13 @@ public class SlackDataStore extends AbstractDataStore {
         return StringUtil.EMPTY;
     }
 
+    /**
+     * Retrieves a user's display name by user ID.
+     *
+     * @param client the Slack client for user lookups
+     * @param userId the user ID to look up
+     * @return the user's display name or the user ID if lookup fails
+     */
     protected String getUsername(final SlackClient client, final String userId) {
         try {
             final User user = client.getUser(userId);
@@ -489,6 +681,12 @@ public class SlackDataStore extends AbstractDataStore {
         return userId;
     }
 
+    /**
+     * Extracts text content from message attachments.
+     *
+     * @param message the message containing attachments
+     * @return the concatenated attachment text or empty string if no attachments
+     */
     protected String getMessageAttachmentsText(final Message message) {
         final List<Attachment> attachments = message.getAttachments();
         if (attachments == null) {
@@ -498,6 +696,15 @@ public class SlackDataStore extends AbstractDataStore {
         return String.join("\n", fallbacks);
     }
 
+    /**
+     * Generates or retrieves the permalink URL for a message.
+     *
+     * @param client the Slack client
+     * @param team the team information
+     * @param channel the channel containing the message
+     * @param message the message to get permalink for
+     * @return the permalink URL for the message
+     */
     public String getMessagePermalink(final SlackClient client, final Team team, final Channel channel, final Message message) {
         String permalink = message.getPermalink();
         if (permalink == null) {
@@ -511,6 +718,14 @@ public class SlackDataStore extends AbstractDataStore {
         return permalink;
     }
 
+    /**
+     * Downloads and extracts content from a Slack file.
+     *
+     * @param client the Slack client for file download
+     * @param file the file to extract content from
+     * @param ignoreError whether to ignore extraction errors
+     * @return the extracted file content or empty string if extraction fails
+     */
     protected String getFileContent(final SlackClient client, final File file, final boolean ignoreError) {
         if (file.getPermalink() != null) {
             final String mimeType = file.getMimetype().trim();

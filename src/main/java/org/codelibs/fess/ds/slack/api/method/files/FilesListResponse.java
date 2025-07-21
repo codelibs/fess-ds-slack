@@ -24,41 +24,101 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Response class for the files.list API method.
+ * Contains a list of files and pagination information.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class FilesListResponse extends Response {
 
+    /**
+     * Default constructor.
+     */
+    public FilesListResponse() {
+        super();
+    }
+
+    /** List of files returned by the API */
     protected List<File> files;
 
+    /** Pagination information for the response */
     protected Paging paging;
 
+    /**
+     * Gets the list of files.
+     *
+     * @return the list of files
+     */
     public List<File> getFiles() {
         return files;
     }
 
+    /**
+     * Gets the pagination information.
+     *
+     * @return the paging object
+     */
     public Paging getPaging() {
         return paging;
     }
 
+    /**
+     * Pagination information for files.list response.
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Paging {
+
+        /**
+         * Default constructor.
+         */
+        public Paging() {
+        }
+
+        /** Number of files in current page */
         protected Integer count;
+
+        /** Total number of files available */
         protected Integer total;
+
+        /** Current page number */
         protected Integer page;
+
+        /** Total number of pages available */
         protected Integer pages;
 
+        /**
+         * Gets the number of files in current page.
+         *
+         * @return the count of files in current page
+         */
         public Integer getCount() {
             return count;
         }
 
+        /**
+         * Gets the total number of files available.
+         *
+         * @return the total number of files
+         */
         public Integer getTotal() {
             return total;
         }
 
+        /**
+         * Gets the current page number.
+         *
+         * @return the current page number
+         */
         public Integer getPage() {
             return page;
         }
 
+        /**
+         * Gets the total number of pages available.
+         *
+         * @return the total number of pages
+         */
         public Integer getPages() {
             return pages;
         }

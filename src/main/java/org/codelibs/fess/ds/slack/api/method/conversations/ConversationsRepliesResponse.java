@@ -25,22 +25,53 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Response class for the conversations.replies API method.
+ * Contains thread messages and pagination metadata.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class ConversationsRepliesResponse extends Response {
 
+    /**
+     * Default constructor.
+     */
+    public ConversationsRepliesResponse() {
+        super();
+    }
+
+    /** List of messages in the thread */
     protected List<Message> messages;
+
+    /** Metadata for pagination and response handling */
     protected ResponseMetadata responseMetadata;
+
+    /** Indicates if there are more messages available */
     protected Boolean hasMore;
 
+    /**
+     * Gets the list of messages in the thread.
+     *
+     * @return the list of messages
+     */
     public List<Message> getMessages() {
         return messages;
     }
 
+    /**
+     * Gets the response metadata for pagination.
+     *
+     * @return the response metadata
+     */
     public ResponseMetadata getResponseMetadata() {
         return responseMetadata;
     }
 
+    /**
+     * Checks if there are more messages available for pagination.
+     *
+     * @return true if more messages are available, false otherwise
+     */
     public boolean hasMore() {
         return hasMore == null ? false : hasMore;
     }

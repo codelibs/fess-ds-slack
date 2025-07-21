@@ -19,22 +19,49 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Represents a Slack bot with basic identification and status information.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class Bot {
 
+    /**
+     * Default constructor.
+     */
+    public Bot() {
+    }
+
+    /** Unique identifier for the bot. */
     protected String id;
+    /** Display name of the bot. */
     protected String name;
+    /** Whether the bot has been deleted. */
     protected Boolean deleted;
 
+    /**
+     * Returns the unique identifier of this bot.
+     *
+     * @return the bot ID
+     */
     public String getId() {
         return id;
     }
 
+    /**
+     * Returns the display name of this bot.
+     *
+     * @return the bot name
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Returns whether this bot has been deleted.
+     *
+     * @return true if the bot is deleted, false otherwise
+     */
     public boolean isDeleted() {
         return deleted == null ? false : deleted;
     }

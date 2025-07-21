@@ -21,17 +21,39 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Response from the chat.getPermalink API method containing the permalink URL.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class ChatGetPermalinkResponse extends Response {
 
+    /**
+     * Default constructor.
+     */
+    public ChatGetPermalinkResponse() {
+        super();
+    }
+
+    /** The channel ID where the message is located. */
     protected String channel;
+    /** The permalink URL for the message. */
     protected String permalink;
 
+    /**
+     * Returns the channel ID.
+     *
+     * @return the channel ID
+     */
     public String getChannel() {
         return channel;
     }
 
+    /**
+     * Returns the permalink URL for the message.
+     *
+     * @return the permalink URL
+     */
     public String getPermalink() {
         return permalink;
     }
