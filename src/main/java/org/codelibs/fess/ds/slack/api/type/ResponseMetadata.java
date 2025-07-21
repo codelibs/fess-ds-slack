@@ -19,12 +19,27 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Contains metadata for paginated Slack API responses.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class ResponseMetadata {
 
+    /**
+     * Default constructor.
+     */
+    public ResponseMetadata() {
+    }
+
+    /** Cursor for retrieving the next page of results. */
     protected String nextCursor;
 
+    /**
+     * Returns the cursor for retrieving the next page of results.
+     *
+     * @return the next cursor, or null if no more pages
+     */
     public String getNextCursor() {
         return nextCursor;
     }

@@ -22,12 +22,28 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Response from the team.info API method containing team information.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class TeamInfoResponse extends Response {
 
+    /**
+     * Default constructor.
+     */
+    public TeamInfoResponse() {
+        super();
+    }
+
+    /** The team information returned by the API. */
     protected Team team;
 
+    /**
+     * Returns the team information.
+     *
+     * @return the team details
+     */
     public Team getTeam() {
         return team;
     }

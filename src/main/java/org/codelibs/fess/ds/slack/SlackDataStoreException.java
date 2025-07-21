@@ -17,18 +17,38 @@ package org.codelibs.fess.ds.slack;
 
 import org.codelibs.fess.exception.DataStoreException;
 
+/**
+ * Exception thrown when errors occur during Slack data store operations.
+ * This includes API authentication failures, network issues, and data processing errors.
+ */
 public class SlackDataStoreException extends DataStoreException {
 
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Creates a new exception with the specified message and cause.
+     *
+     * @param message the detail message
+     * @param cause the cause of this exception
+     */
     public SlackDataStoreException(final String message, final Throwable cause) {
         super(message, cause);
     }
 
+    /**
+     * Creates a new exception with the specified message.
+     *
+     * @param message the detail message
+     */
     public SlackDataStoreException(final String message) {
         super(message);
     }
 
+    /**
+     * Creates a new exception with the specified cause.
+     *
+     * @param cause the cause of this exception
+     */
     public SlackDataStoreException(final Throwable cause) {
         super(cause);
     }

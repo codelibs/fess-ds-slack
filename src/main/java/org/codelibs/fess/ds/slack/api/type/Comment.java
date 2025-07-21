@@ -19,32 +19,71 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Represents a comment on a file or other content in Slack.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class Comment {
 
+    /**
+     * Default constructor.
+     */
+    public Comment() {
+    }
+
+    /** Unique identifier for the comment. */
     protected String id;
+    /** Timestamp when the comment was created. */
     protected Long created;
+    /** Timestamp of the comment. */
     protected Long timestamp;
+    /** User ID of the comment author. */
     protected String user;
+    /** The comment text content. */
     protected String comment;
 
+    /**
+     * Returns the unique identifier of this comment.
+     *
+     * @return the comment ID
+     */
     public String getId() {
         return id;
     }
 
+    /**
+     * Returns the timestamp when this comment was created.
+     *
+     * @return the creation timestamp
+     */
     public Long getCreated() {
         return created;
     }
 
+    /**
+     * Returns the timestamp of this comment.
+     *
+     * @return the comment timestamp
+     */
     public Long getTimestamp() {
         return timestamp;
     }
 
+    /**
+     * Returns the user ID of the comment author.
+     *
+     * @return the user ID
+     */
     public String getUser() {
         return user;
     }
 
+    /**
+     * Returns the text content of this comment.
+     *
+     * @return the comment text
+     */
     public String getComment() {
         return comment;
     }

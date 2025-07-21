@@ -19,22 +19,50 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Represents a Slack team (workspace) with basic identification information.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class Team {
 
+    /**
+     * Default constructor for Team.
+     */
+    public Team() {
+        // Default constructor
+    }
+
+    /** Unique identifier for the team. */
     protected String id;
+    /** Display name of the team. */
     protected String name;
+    /** Domain name of the team. */
     protected String domain;
 
+    /**
+     * Returns the unique identifier of this team.
+     *
+     * @return the team ID
+     */
     public String getId() {
         return id;
     }
 
+    /**
+     * Returns the display name of this team.
+     *
+     * @return the team name
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Returns the domain name of this team.
+     *
+     * @return the team domain
+     */
     public String getDomain() {
         return domain;
     }

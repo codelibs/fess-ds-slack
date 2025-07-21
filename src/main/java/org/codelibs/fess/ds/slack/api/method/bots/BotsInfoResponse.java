@@ -22,12 +22,28 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Response from the bots.info API method containing bot information.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class BotsInfoResponse extends Response {
 
+    /**
+     * Default constructor.
+     */
+    public BotsInfoResponse() {
+        super();
+    }
+
+    /** The bot information returned by the API. */
     protected Bot bot;
 
+    /**
+     * Returns the bot information.
+     *
+     * @return the bot details
+     */
     public Bot getBot() {
         return bot;
     }

@@ -19,33 +19,73 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Represents a Slack user with identification and profile information.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class User {
 
+    /**
+     * Default constructor for User.
+     */
+    public User() {
+        // Default constructor
+    }
+
+    /** Unique identifier for the user. */
     protected String id;
+    /** Username of the user. */
     protected String name;
+    /** Whether the user has been deleted. */
     protected Boolean deleted;
+    /** Real name of the user. */
     protected String realName;
 
+    /** Detailed profile information for the user. */
     protected Profile profile;
 
+    /**
+     * Returns the unique identifier of this user.
+     *
+     * @return the user ID
+     */
     public String getId() {
         return id;
     }
 
+    /**
+     * Returns the username of this user.
+     *
+     * @return the username
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Returns whether this user has been deleted.
+     *
+     * @return true if the user is deleted, false otherwise
+     */
     public boolean isDeleted() {
         return deleted == null ? false : deleted;
     }
 
+    /**
+     * Returns the real name of this user.
+     *
+     * @return the real name
+     */
     public String getRealName() {
         return realName;
     }
 
+    /**
+     * Returns the detailed profile information for this user.
+     *
+     * @return the user profile
+     */
     public Profile getProfile() {
         return profile;
     }

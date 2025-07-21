@@ -19,22 +19,49 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Represents a Slack message attachment containing additional formatted content.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class Attachment {
 
+    /**
+     * Default constructor.
+     */
+    public Attachment() {
+    }
+
+    /** Fallback text displayed when rich formatting is not supported. */
     protected String fallback;
+    /** Title of the attachment. */
     protected String title;
+    /** Main text content of the attachment. */
     protected String text;
 
+    /**
+     * Returns the fallback text for this attachment.
+     *
+     * @return the fallback text
+     */
     public String getFallback() {
         return fallback;
     }
 
+    /**
+     * Returns the title of this attachment.
+     *
+     * @return the attachment title
+     */
     public String getTitle() {
         return title;
     }
 
+    /**
+     * Returns the main text content of this attachment.
+     *
+     * @return the attachment text
+     */
     public String getText() {
         return text;
     }

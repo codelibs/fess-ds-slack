@@ -19,8 +19,16 @@ import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
+/**
+ * Request to retrieve information about the Slack team/workspace.
+ */
 public class TeamInfoRequest extends Request<TeamInfoResponse> {
 
+    /**
+     * Creates a new team.info request with the specified authentication.
+     *
+     * @param authentication the authentication credentials
+     */
     public TeamInfoRequest(final Authentication authentication) {
         super(authentication);
     }

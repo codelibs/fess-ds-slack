@@ -19,11 +19,22 @@ import org.codelibs.curl.CurlRequest;
 import org.codelibs.fess.ds.slack.api.Authentication;
 import org.codelibs.fess.ds.slack.api.Request;
 
+/**
+ * Request to retrieve information about a specific user in Slack.
+ */
 public class UsersInfoRequest extends Request<UsersInfoResponse> {
 
+    /** The user ID to retrieve information for. */
     protected final String user;
+    /** Whether to include locale information in the response. */
     protected Boolean includeLocale;
 
+    /**
+     * Creates a new users.info request with the specified authentication and user.
+     *
+     * @param authentication the authentication credentials
+     * @param user the user ID to get information for
+     */
     public UsersInfoRequest(final Authentication authentication, final String user) {
         super(authentication);
         this.user = user;
@@ -34,6 +45,12 @@ public class UsersInfoRequest extends Request<UsersInfoResponse> {
         return parseResponse(request().execute().getContentAsString(), UsersInfoResponse.class);
     }
 
+    /**
+     * Sets whether to include locale information in the response.
+     *
+     * @param includeLocale whether to include locale information
+     * @return this request instance for method chaining
+     */
     public UsersInfoRequest includeLocale(final Boolean includeLocale) {
         this.includeLocale = includeLocale;
         return this;

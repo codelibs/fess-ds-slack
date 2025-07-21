@@ -25,17 +25,39 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
+/**
+ * Response from the users.list API method containing a list of users and pagination metadata.
+ */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
 public class UsersListResponse extends Response {
 
+    /**
+     * Default constructor.
+     */
+    public UsersListResponse() {
+        super();
+    }
+
+    /** List of users returned by the API. */
     protected List<User> members;
+    /** Metadata for pagination including next cursor. */
     protected ResponseMetadata responseMetadata;
 
+    /**
+     * Returns the list of users.
+     *
+     * @return the list of users
+     */
     public List<User> getMembers() {
         return members;
     }
 
+    /**
+     * Returns the pagination metadata.
+     *
+     * @return the response metadata for pagination
+     */
     public ResponseMetadata getResponseMetadata() {
         return responseMetadata;
     }
