@@ -214,7 +214,8 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     private List<String> getSupportedMimeTypes(final DataStoreParams paramMap) {
-        return Arrays.stream(StringUtil.split(paramMap.getAsString(SUPPORTED_MIMETYPES, ".*"), ",")).map(String::trim)
+        return Arrays.stream(StringUtil.split(paramMap.getAsString(SUPPORTED_MIMETYPES, ".*"), ","))
+                .map(String::trim)
                 .collect(Collectors.toList());
     }
 
@@ -736,7 +737,11 @@ public class SlackDataStore extends AbstractDataStore {
                             "HTTP Status " + response.getHttpStatusCode() + " : failed to get the file from " + fileUrl);
                 }
                 try (final InputStream in = response.getContentAsStream()) {
-                    return ComponentUtil.getExtractorFactory().builder(in, null).mimeType(mimeType).extractorName(extractorName).extract()
+                    return ComponentUtil.getExtractorFactory()
+                            .builder(in, null)
+                            .mimeType(mimeType)
+                            .extractorName(extractorName)
+                            .extract()
                             .getContent();
                 }
             } catch (final Exception e) {

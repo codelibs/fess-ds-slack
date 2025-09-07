@@ -161,29 +161,30 @@ public class SlackClient implements Closeable {
             }
         }
 
-        usersCache =
-                CacheBuilder.newBuilder().maximumSize(Integer.parseInt(paramMap.getAsString(USER_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
-                        .build(new CacheLoader<String, User>() {
-                            @Override
-                            public User load(final String key) {
-                                return usersInfo(key).execute().getUser();
-                            }
-                        });
-        botsCache = CacheBuilder.newBuilder().maximumSize(Integer.parseInt(paramMap.getAsString(BOT_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
+        usersCache = CacheBuilder.newBuilder()
+                .maximumSize(Integer.parseInt(paramMap.getAsString(USER_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
+                .build(new CacheLoader<String, User>() {
+                    @Override
+                    public User load(final String key) {
+                        return usersInfo(key).execute().getUser();
+                    }
+                });
+        botsCache = CacheBuilder.newBuilder()
+                .maximumSize(Integer.parseInt(paramMap.getAsString(BOT_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, Bot>() {
                     @Override
                     public Bot load(final String key) {
                         return botsInfo().bot(key).execute().getBot();
                     }
                 });
-        channelsCache =
-                CacheBuilder.newBuilder().maximumSize(Integer.parseInt(paramMap.getAsString(CHANNEL_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
-                        .build(new CacheLoader<String, Channel>() {
-                            @Override
-                            public Channel load(final String key) {
-                                return conversationsInfo(key).execute().getChannel();
-                            }
-                        });
+        channelsCache = CacheBuilder.newBuilder()
+                .maximumSize(Integer.parseInt(paramMap.getAsString(CHANNEL_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
+                .build(new CacheLoader<String, Channel>() {
+                    @Override
+                    public Channel load(final String key) {
+                        return conversationsInfo(key).execute().getChannel();
+                    }
+                });
         // Initialize caches to avoid exceeding the rate limit of the Slack API
         getUsers(user -> {
             usersCache.put(user.getId(), user);
@@ -428,8 +429,10 @@ public class SlackClient implements Closeable {
      * @return the HTTP response containing the file content
      */
     public CurlResponse getFileResponse(final String fileUrl) {
-        return Curl.get(fileUrl).header("Authorization", "Bearer " + getToken(paramMap))
-                .header("Content-type", "application/x-www-form-urlencoded ").execute();
+        return Curl.get(fileUrl)
+                .header("Authorization", "Bearer " + getToken(paramMap))
+                .header("Content-type", "application/x-www-form-urlencoded ")
+                .execute();
     }
 
     /**
