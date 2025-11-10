@@ -347,4 +347,293 @@ public class SlackClientTest extends LastaFluteTestCase {
         assertEquals(team.getDomain(), "TEAM_DOMAIN");
     }
 
+    // Test error responses
+    public void testConversationsList_errorResponse() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": false," + //
+                "    \"error\": \"invalid_auth\"" + //
+                "}";
+        final ConversationsListResponse response =
+                new ConversationsListRequest(null).parseResponse(content, ConversationsListResponse.class);
+        assertFalse(response.ok());
+    }
+
+    public void testConversationsHistory_errorResponse() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": false," + //
+                "    \"error\": \"channel_not_found\"" + //
+                "}";
+        final ConversationsHistoryResponse response =
+                new ConversationsHistoryRequest(null, null).parseResponse(content, ConversationsHistoryResponse.class);
+        assertFalse(response.ok());
+    }
+
+    public void testUsersList_errorResponse() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": false," + //
+                "    \"error\": \"invalid_auth\"" + //
+                "}";
+        final UsersListResponse response = new UsersListRequest(null).parseResponse(content, UsersListResponse.class);
+        assertFalse(response.ok());
+    }
+
+    public void testFilesList_errorResponse() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": false," + //
+                "    \"error\": \"not_authed\"" + //
+                "}";
+        final FilesListResponse response = new FilesListRequest(null).parseResponse(content, FilesListResponse.class);
+        assertFalse(response.ok());
+    }
+
+    public void testBotsInfo_errorResponse() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": false," + //
+                "    \"error\": \"bot_not_found\"" + //
+                "}";
+        final BotsInfoResponse response = new BotsInfoRequest(null).parseResponse(content, BotsInfoResponse.class);
+        assertFalse(response.ok());
+    }
+
+    public void testTeamInfo_errorResponse() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": false," + //
+                "    \"error\": \"invalid_auth\"" + //
+                "}";
+        final TeamInfoResponse response = new TeamInfoRequest(null).parseResponse(content, TeamInfoResponse.class);
+        assertFalse(response.ok());
+    }
+
+    // Test edge cases
+    public void testConversationsList_emptyChannels() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"channels\": []," + //
+                "    \"response_metadata\": {" + //
+                "        \"next_cursor\": \"\"" + //
+                "    }" + //
+                "}";
+        final ConversationsListResponse response =
+                new ConversationsListRequest(null).parseResponse(content, ConversationsListResponse.class);
+        assertTrue(response.ok());
+        final List<Channel> channels = response.getChannels();
+        assertNotNull(channels);
+        assertEquals(0, channels.size());
+        assertEquals("", response.getResponseMetadata().getNextCursor());
+    }
+
+    public void testConversationsHistory_emptyMessages() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"messages\": []," + //
+                "    \"has_more\": false," + //
+                "    \"response_metadata\": {" + //
+                "        \"next_cursor\": \"\"" + //
+                "    }" + //
+                "}";
+        final ConversationsHistoryResponse response =
+                new ConversationsHistoryRequest(null, null).parseResponse(content, ConversationsHistoryResponse.class);
+        assertTrue(response.ok());
+        final List<Message> messages = response.getMessages();
+        assertNotNull(messages);
+        assertEquals(0, messages.size());
+        assertFalse(response.hasMore());
+    }
+
+    public void testUsersList_emptyMembers() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"members\": []" + //
+                "}";
+        final UsersListResponse response = new UsersListRequest(null).parseResponse(content, UsersListResponse.class);
+        assertTrue(response.ok());
+        final List<User> members = response.getMembers();
+        assertNotNull(members);
+        assertEquals(0, members.size());
+    }
+
+    public void testFilesList_emptyFiles() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"files\": []," + //
+                "    \"paging\": {" + //
+                "        \"count\": 0" + //
+                "    }" + //
+                "}";
+        final FilesListResponse response = new FilesListRequest(null).parseResponse(content, FilesListResponse.class);
+        assertTrue(response.ok());
+        final List<File> files = response.getFiles();
+        assertNotNull(files);
+        assertEquals(0, files.size());
+        assertEquals(Integer.valueOf(0), response.getPaging().getCount());
+    }
+
+    // Test multiple attachments in a single message
+    public void testConversationsHistory_multipleAttachments() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"messages\": [" + //
+                "        {" + //
+                "            \"user\": \"USER\"," + //
+                "            \"text\": \"TEXT\"," + //
+                "            \"ts\": \"1234567890.000100\"," + //
+                "            \"attachments\": [" + //
+                "                {" + //
+                "                    \"fallback\": \"FALLBACK1\"" + //
+                "                }," + //
+                "                {" + //
+                "                    \"fallback\": \"FALLBACK2\"" + //
+                "                }" + //
+                "            ]" + //
+                "        }" + //
+                "    ]," + //
+                "    \"has_more\": false" + //
+                "}";
+        final ConversationsHistoryResponse response =
+                new ConversationsHistoryRequest(null, null).parseResponse(content, ConversationsHistoryResponse.class);
+        assertTrue(response.ok());
+        final List<Message> messages = response.getMessages();
+        assertEquals(1, messages.size());
+        final Message message = messages.get(0);
+        assertNotNull(message.getAttachments());
+        assertEquals(2, message.getAttachments().size());
+        assertEquals("FALLBACK1", message.getAttachments().get(0).getFallback());
+        assertEquals("FALLBACK2", message.getAttachments().get(1).getFallback());
+    }
+
+    // Test multiple files in a single message
+    public void testConversationsHistory_multipleFiles() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"messages\": [" + //
+                "        {" + //
+                "            \"user\": \"USER\"," + //
+                "            \"text\": \"TEXT\"," + //
+                "            \"ts\": \"1234567890.000100\"," + //
+                "            \"files\": [" + //
+                "                {" + //
+                "                    \"id\": \"FILE_ID1\"" + //
+                "                }," + //
+                "                {" + //
+                "                    \"id\": \"FILE_ID2\"" + //
+                "                }" + //
+                "            ]" + //
+                "        }" + //
+                "    ]," + //
+                "    \"has_more\": false" + //
+                "}";
+        final ConversationsHistoryResponse response =
+                new ConversationsHistoryRequest(null, null).parseResponse(content, ConversationsHistoryResponse.class);
+        assertTrue(response.ok());
+        final List<Message> messages = response.getMessages();
+        assertEquals(1, messages.size());
+        final Message message = messages.get(0);
+        assertNotNull(message.getFiles());
+        assertEquals(2, message.getFiles().size());
+        assertEquals("FILE_ID1", message.getFiles().get(0).getId());
+        assertEquals("FILE_ID2", message.getFiles().get(1).getId());
+    }
+
+    // Test ConversationsRepliesResponse
+    public void testConversationsReplies() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"messages\": [" + //
+                "        {" + //
+                "            \"user\": \"PARENT_USER\"," + //
+                "            \"text\": \"PARENT_TEXT\"," + //
+                "            \"ts\": \"1234567890.000100\"," + //
+                "            \"thread_ts\": \"1234567890.000100\"" + //
+                "        }," + //
+                "        {" + //
+                "            \"user\": \"REPLY_USER\"," + //
+                "            \"text\": \"REPLY_TEXT\"," + //
+                "            \"ts\": \"1234567891.000200\"," + //
+                "            \"thread_ts\": \"1234567890.000100\"" + //
+                "        }" + //
+                "    ]," + //
+                "    \"has_more\": false," + //
+                "    \"response_metadata\": {" + //
+                "        \"next_cursor\": \"\"" + //
+                "    }" + //
+                "}";
+        final ConversationsRepliesResponse response =
+                new ConversationsRepliesRequest(null, null, null).parseResponse(content, ConversationsRepliesResponse.class);
+        assertTrue(response.ok());
+        final List<Message> messages = response.getMessages();
+        assertEquals(2, messages.size());
+        assertEquals("PARENT_USER", messages.get(0).getUser());
+        assertEquals("PARENT_TEXT", messages.get(0).getText());
+        assertEquals("REPLY_USER", messages.get(1).getUser());
+        assertEquals("REPLY_TEXT", messages.get(1).getText());
+        assertFalse(response.hasMore());
+    }
+
+    // Test pagination
+    public void testConversationsList_withPagination() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"channels\": [" + //
+                "        {" + //
+                "            \"id\": \"CHANNEL_ID0\"," + //
+                "            \"name\": \"CHANNEL_Name0\"" + //
+                "        }" + //
+                "    ]," + //
+                "    \"response_metadata\": {" + //
+                "        \"next_cursor\": \"dGVhbTpDMDYxRkE1UEI=\"" + //
+                "    }" + //
+                "}";
+        final ConversationsListResponse response =
+                new ConversationsListRequest(null).parseResponse(content, ConversationsListResponse.class);
+        assertTrue(response.ok());
+        final List<Channel> channels = response.getChannels();
+        assertEquals(1, channels.size());
+        assertNotNull(response.getResponseMetadata().getNextCursor());
+        assertFalse(response.getResponseMetadata().getNextCursor().isEmpty());
+        assertEquals("dGVhbTpDMDYxRkE1UEI=", response.getResponseMetadata().getNextCursor());
+    }
+
+    // Test FilesListResponse with paging
+    public void testFilesList_withPaging() {
+        final String content = "" + //
+                "{" + //
+                "    \"ok\": true," + //
+                "    \"files\": [" + //
+                "        {" + //
+                "            \"id\": \"FILE_ID0\"," + //
+                "            \"timestamp\": 1234567890," + //
+                "            \"thumb_360\": \"THUMBNAIL0\"" + //
+                "        }" + //
+                "    ]," + //
+                "    \"paging\": {" + //
+                "        \"count\": 1," + //
+                "        \"page\": 1," + //
+                "        \"pages\": 5," + //
+                "        \"total\": 5" + //
+                "    }" + //
+                "}";
+        final FilesListResponse response = new FilesListRequest(null).parseResponse(content, FilesListResponse.class);
+        assertTrue(response.ok());
+        final List<File> files = response.getFiles();
+        assertEquals(1, files.size());
+        assertEquals(Integer.valueOf(1), response.getPaging().getCount());
+        assertEquals(Integer.valueOf(1), response.getPaging().getPage());
+        assertEquals(Integer.valueOf(5), response.getPaging().getPages());
+        assertEquals(Integer.valueOf(5), response.getPaging().getTotal());
+    }
+
 }
