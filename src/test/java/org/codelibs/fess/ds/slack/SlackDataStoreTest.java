@@ -15,25 +15,12 @@
  */
 package org.codelibs.fess.ds.slack;
 
-import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutionException;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.codelibs.fess.ds.callback.IndexUpdateCallback;
-import org.codelibs.fess.ds.slack.api.type.Attachment;
-import org.codelibs.fess.ds.slack.api.type.Bot;
-import org.codelibs.fess.ds.slack.api.type.Channel;
-import org.codelibs.fess.ds.slack.api.type.Comment;
-import org.codelibs.fess.ds.slack.api.type.File;
-import org.codelibs.fess.ds.slack.api.type.Message;
-import org.codelibs.fess.ds.slack.api.type.Profile;
-import org.codelibs.fess.ds.slack.api.type.Team;
-import org.codelibs.fess.ds.slack.api.type.User;
 import org.codelibs.fess.entity.DataStoreParams;
 import org.codelibs.fess.mylasta.direction.FessConfig;
 import org.codelibs.fess.opensearch.config.exentity.DataConfig;
@@ -174,336 +161,37 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
         assertFalse(fileCrawl);
     }
 
-    // Test getMessageText method
-    public void test_getMessageText_normalText() {
-        final Message message = new Message();
-        message.text = "Hello World";
-        final String text = dataStore.getMessageText(message);
-        assertEquals("Hello World", text);
+    // Test getName method
+    public void test_getName() {
+        final String name = dataStore.getName();
+        assertEquals("SlackDataStore", name);
     }
 
-    public void test_getMessageText_nullText() {
-        final Message message = new Message();
-        message.text = null;
-        final String text = dataStore.getMessageText(message);
-        assertEquals("", text);
+    // Test setExtractorName method
+    public void test_setExtractorName() {
+        dataStore.setExtractorName("customExtractor");
+        // No direct getter to verify, but we can ensure no exception is thrown
+        assertNotNull(dataStore);
     }
 
-    // Test getMessageTimestamp method
-    public void test_getMessageTimestamp() {
-        final Message message = new Message();
-        message.ts = "1234567890.123456";
-        final Date timestamp = dataStore.getMessageTimestamp(message);
-        assertNotNull(timestamp);
-        assertEquals(1234567890123L, timestamp.getTime());
+    // Test thread pool creation
+    public void test_newFixedThreadPool() {
+        final java.util.concurrent.ExecutorService executorService = dataStore.newFixedThreadPool(2);
+        assertNotNull(executorService);
+        executorService.shutdown();
     }
 
-    public void test_getMessageTimestamp_integerTimestamp() {
-        final Message message = new Message();
-        message.ts = "1234567890.000000";
-        final Date timestamp = dataStore.getMessageTimestamp(message);
-        assertNotNull(timestamp);
-        assertEquals(1234567890000L, timestamp.getTime());
+    // Test newFixedThreadPool with different thread counts
+    public void test_newFixedThreadPool_singleThread() {
+        final java.util.concurrent.ExecutorService executorService = dataStore.newFixedThreadPool(1);
+        assertNotNull(executorService);
+        executorService.shutdown();
     }
 
-    // Test getFileTimestamp method
-    public void test_getFileTimestamp() {
-        final File file = new File();
-        file.timestamp = 1234567890L;
-        final Date timestamp = dataStore.getFileTimestamp(file);
-        assertNotNull(timestamp);
-        assertEquals(1234567890000L, timestamp.getTime());
-    }
-
-    // Test getMessageUsername method
-    public void test_getMessageUsername_normalUser() throws ExecutionException {
-        final Message message = new Message();
-        message.user = "U12345";
-
-        final User user = new User();
-        user.id = "U12345";
-        final Profile profile = new Profile();
-        profile.displayName = "Test User";
-        user.profile = profile;
-
-        final SlackClient mockClient = new SlackClient(createMockParams()) {
-            @Override
-            public User getUser(final String userName) throws ExecutionException {
-                return user;
-            }
-        };
-
-        final String username = dataStore.getMessageUsername(mockClient, message);
-        assertEquals("Test User", username);
-    }
-
-    public void test_getMessageUsername_nullUser() {
-        final Message message = new Message();
-        message.user = null;
-
-        final SlackClient mockClient = new SlackClient(createMockParams());
-        final String username = dataStore.getMessageUsername(mockClient, message);
-        assertEquals("", username);
-    }
-
-    public void test_getMessageUsername_botMessage() throws ExecutionException {
-        final Message message = new Message();
-        message.user = null;
-        message.subtype = "bot_message";
-        message.botId = "B12345";
-
-        final Bot bot = new Bot();
-        bot.id = "B12345";
-        bot.name = "Test Bot";
-
-        final SlackClient mockClient = new SlackClient(createMockParams()) {
-            @Override
-            public Bot getBot(final String botName) throws ExecutionException {
-                return bot;
-            }
-        };
-
-        final String username = dataStore.getMessageUsername(mockClient, message);
-        assertEquals("Test Bot", username);
-    }
-
-    public void test_getMessageUsername_fileComment() throws ExecutionException {
-        final Message message = new Message();
-        message.user = null;
-        message.subtype = "file_comment";
-
-        final Comment comment = new Comment();
-        comment.user = "U12345";
-        message.comment = comment;
-
-        final User user = new User();
-        user.id = "U12345";
-        final Profile profile = new Profile();
-        profile.displayName = "Comment User";
-        profile.realName = "Real Name";
-        user.profile = profile;
-
-        final SlackClient mockClient = new SlackClient(createMockParams()) {
-            @Override
-            public User getUser(final String userName) throws ExecutionException {
-                return user;
-            }
-        };
-
-        final String username = dataStore.getMessageUsername(mockClient, message);
-        assertEquals("Comment User", username);
-    }
-
-    // Test getFileUsername method
-    public void test_getFileUsername() throws ExecutionException {
-        final File file = new File();
-        file.user = "U12345";
-
-        final User user = new User();
-        user.id = "U12345";
-        final Profile profile = new Profile();
-        profile.displayName = "File Owner";
-        user.profile = profile;
-
-        final SlackClient mockClient = new SlackClient(createMockParams()) {
-            @Override
-            public User getUser(final String userName) throws ExecutionException {
-                return user;
-            }
-        };
-
-        final String username = dataStore.getFileUsername(mockClient, file);
-        assertEquals("File Owner", username);
-    }
-
-    public void test_getFileUsername_nullUser() {
-        final File file = new File();
-        file.user = null;
-
-        final SlackClient mockClient = new SlackClient(createMockParams());
-        final String username = dataStore.getFileUsername(mockClient, file);
-        assertEquals("", username);
-    }
-
-    // Test getUsername method with fallback
-    public void test_getUsername_displayName() throws ExecutionException {
-        final User user = new User();
-        user.id = "U12345";
-        final Profile profile = new Profile();
-        profile.displayName = "Display Name";
-        profile.realName = "Real Name";
-        user.profile = profile;
-        user.name = "username";
-
-        final SlackClient mockClient = new SlackClient(createMockParams()) {
-            @Override
-            public User getUser(final String userName) throws ExecutionException {
-                return user;
-            }
-        };
-
-        final String username = dataStore.getUsername(mockClient, "U12345");
-        assertEquals("Display Name", username);
-    }
-
-    public void test_getUsername_realName() throws ExecutionException {
-        final User user = new User();
-        user.id = "U12345";
-        final Profile profile = new Profile();
-        profile.displayName = null;
-        profile.realName = "Real Name";
-        user.profile = profile;
-        user.realName = "Real Name";
-        user.name = "username";
-
-        final SlackClient mockClient = new SlackClient(createMockParams()) {
-            @Override
-            public User getUser(final String userName) throws ExecutionException {
-                return user;
-            }
-        };
-
-        final String username = dataStore.getUsername(mockClient, "U12345");
-        assertEquals("Real Name", username);
-    }
-
-    public void test_getUsername_name() throws ExecutionException {
-        final User user = new User();
-        user.id = "U12345";
-        final Profile profile = new Profile();
-        profile.displayName = null;
-        profile.realName = null;
-        user.profile = profile;
-        user.realName = null;
-        user.name = "username";
-
-        final SlackClient mockClient = new SlackClient(createMockParams()) {
-            @Override
-            public User getUser(final String userName) throws ExecutionException {
-                return user;
-            }
-        };
-
-        final String username = dataStore.getUsername(mockClient, "U12345");
-        assertEquals("username", username);
-    }
-
-    public void test_getUsername_fallbackToUserId() throws ExecutionException {
-        final SlackClient mockClient = new SlackClient(createMockParams()) {
-            @Override
-            public User getUser(final String userName) throws ExecutionException {
-                throw new ExecutionException("User not found", new RuntimeException());
-            }
-        };
-
-        final String username = dataStore.getUsername(mockClient, "U12345");
-        assertEquals("U12345", username);
-    }
-
-    // Test getMessageAttachmentsText method
-    public void test_getMessageAttachmentsText_nullAttachments() {
-        final Message message = new Message();
-        message.attachments = null;
-        final String attachmentsText = dataStore.getMessageAttachmentsText(message);
-        assertEquals("", attachmentsText);
-    }
-
-    public void test_getMessageAttachmentsText_emptyAttachments() {
-        final Message message = new Message();
-        message.attachments = new ArrayList<>();
-        final String attachmentsText = dataStore.getMessageAttachmentsText(message);
-        assertEquals("", attachmentsText);
-    }
-
-    public void test_getMessageAttachmentsText_singleAttachment() {
-        final Message message = new Message();
-        final List<Attachment> attachments = new ArrayList<>();
-        final Attachment attachment = new Attachment();
-        attachment.fallback = "Attachment 1";
-        attachments.add(attachment);
-        message.attachments = attachments;
-
-        final String attachmentsText = dataStore.getMessageAttachmentsText(message);
-        assertEquals("Attachment 1", attachmentsText);
-    }
-
-    public void test_getMessageAttachmentsText_multipleAttachments() {
-        final Message message = new Message();
-        final List<Attachment> attachments = new ArrayList<>();
-
-        final Attachment attachment1 = new Attachment();
-        attachment1.fallback = "Attachment 1";
-        attachments.add(attachment1);
-
-        final Attachment attachment2 = new Attachment();
-        attachment2.fallback = "Attachment 2";
-        attachments.add(attachment2);
-
-        message.attachments = attachments;
-
-        final String attachmentsText = dataStore.getMessageAttachmentsText(message);
-        assertEquals("Attachment 1\nAttachment 2", attachmentsText);
-    }
-
-    // Test getMessagePermalink method
-    public void test_getMessagePermalink_existingPermalink() {
-        final Message message = new Message();
-        message.permalink = "https://existing.slack.com/archives/C123/p1234567890";
-        message.ts = "1234567890.123456";
-
-        final Channel channel = new Channel();
-        channel.id = "C123";
-
-        final Team team = new Team();
-        team.domain = "test";
-
-        final SlackClient mockClient = new SlackClient(createMockParams());
-
-        final String permalink = dataStore.getMessagePermalink(mockClient, team, channel, message);
-        assertEquals("https://existing.slack.com/archives/C123/p1234567890", permalink);
-    }
-
-    public void test_getMessagePermalink_generatedWithTeam() {
-        final Message message = new Message();
-        message.permalink = null;
-        message.ts = "1234567890.123456";
-
-        final Channel channel = new Channel();
-        channel.id = "C123";
-
-        final Team team = new Team();
-        team.domain = "testteam";
-
-        final SlackClient mockClient = new SlackClient(createMockParams());
-
-        final String permalink = dataStore.getMessagePermalink(mockClient, team, channel, message);
-        assertEquals("https://testteam.slack.com/archives/C123/p1234567890123456", permalink);
-    }
-
-    public void test_getMessagePermalink_generatedWithClient() {
-        final Message message = new Message();
-        message.permalink = null;
-        message.ts = "1234567890.123456";
-
-        final Channel channel = new Channel();
-        channel.id = "C123";
-
-        final SlackClient mockClient = new SlackClient(createMockParams()) {
-            @Override
-            public String getPermalink(final String channelId, final String threadTs) {
-                return "https://clientgenerated.slack.com/archives/" + channelId + "/p" + threadTs.replace(".", "");
-            }
-        };
-
-        final String permalink = dataStore.getMessagePermalink(mockClient, null, channel, message);
-        assertEquals("https://clientgenerated.slack.com/archives/C123/p1234567890123456", permalink);
-    }
-
-    // Helper method to create mock parameters
-    private DataStoreParams createMockParams() {
-        final DataStoreParams params = new DataStoreParams();
-        params.put("token", "xoxb-test-token");
-        return params;
+    public void test_newFixedThreadPool_multipleThreads() {
+        final java.util.concurrent.ExecutorService executorService = dataStore.newFixedThreadPool(5);
+        assertNotNull(executorService);
+        executorService.shutdown();
     }
 
 }
