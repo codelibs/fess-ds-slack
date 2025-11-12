@@ -25,6 +25,7 @@ import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryR
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListResponse;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesResponse;
 import org.codelibs.fess.ds.slack.api.method.files.FilesListRequest;
 import org.codelibs.fess.ds.slack.api.method.files.FilesListResponse;

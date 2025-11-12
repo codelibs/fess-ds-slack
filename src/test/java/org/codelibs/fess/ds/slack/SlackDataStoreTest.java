@@ -26,6 +26,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.codelibs.fess.ds.callback.IndexUpdateCallback;
 import org.codelibs.fess.ds.slack.api.type.Attachment;
+import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.Comment;
 import org.codelibs.fess.ds.slack.api.type.File;
@@ -33,7 +34,6 @@ import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Profile;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
-import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.entity.DataStoreParams;
 import org.codelibs.fess.mylasta.direction.FessConfig;
 import org.codelibs.fess.opensearch.config.exentity.DataConfig;
@@ -177,14 +177,14 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
     // Test getMessageText method
     public void test_getMessageText_normalText() {
         final Message message = new Message();
-        message.setText("Hello World");
+        message.text = "Hello World";
         final String text = dataStore.getMessageText(message);
         assertEquals("Hello World", text);
     }
 
     public void test_getMessageText_nullText() {
         final Message message = new Message();
-        message.setText(null);
+        message.text = null;
         final String text = dataStore.getMessageText(message);
         assertEquals("", text);
     }
@@ -192,7 +192,7 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
     // Test getMessageTimestamp method
     public void test_getMessageTimestamp() {
         final Message message = new Message();
-        message.setTs("1234567890.123456");
+        message.ts = "1234567890.123456";
         final Date timestamp = dataStore.getMessageTimestamp(message);
         assertNotNull(timestamp);
         assertEquals(1234567890123L, timestamp.getTime());
@@ -200,7 +200,7 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
 
     public void test_getMessageTimestamp_integerTimestamp() {
         final Message message = new Message();
-        message.setTs("1234567890.000000");
+        message.ts = "1234567890.000000";
         final Date timestamp = dataStore.getMessageTimestamp(message);
         assertNotNull(timestamp);
         assertEquals(1234567890000L, timestamp.getTime());
@@ -209,7 +209,7 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
     // Test getFileTimestamp method
     public void test_getFileTimestamp() {
         final File file = new File();
-        file.setTimestamp(1234567890L);
+        file.timestamp = 1234567890L;
         final Date timestamp = dataStore.getFileTimestamp(file);
         assertNotNull(timestamp);
         assertEquals(1234567890000L, timestamp.getTime());
@@ -218,13 +218,13 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
     // Test getMessageUsername method
     public void test_getMessageUsername_normalUser() throws ExecutionException {
         final Message message = new Message();
-        message.setUser("U12345");
+        message.user = "U12345";
 
         final User user = new User();
-        user.setId("U12345");
+        user.id = "U12345";
         final Profile profile = new Profile();
-        profile.setDisplayName("Test User");
-        user.setProfile(profile);
+        profile.displayName = "Test User";
+        user.profile = profile;
 
         final SlackClient mockClient = new SlackClient(createMockParams()) {
             @Override
@@ -239,7 +239,7 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
 
     public void test_getMessageUsername_nullUser() {
         final Message message = new Message();
-        message.setUser(null);
+        message.user = null;
 
         final SlackClient mockClient = new SlackClient(createMockParams());
         final String username = dataStore.getMessageUsername(mockClient, message);
@@ -248,13 +248,13 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
 
     public void test_getMessageUsername_botMessage() throws ExecutionException {
         final Message message = new Message();
-        message.setUser(null);
-        message.setSubtype("bot_message");
-        message.setBotId("B12345");
+        message.user = null;
+        message.subtype = "bot_message";
+        message.botId = "B12345";
 
         final Bot bot = new Bot();
-        bot.setId("B12345");
-        bot.setName("Test Bot");
+        bot.id = "B12345";
+        bot.name = "Test Bot";
 
         final SlackClient mockClient = new SlackClient(createMockParams()) {
             @Override
@@ -269,19 +269,19 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
 
     public void test_getMessageUsername_fileComment() throws ExecutionException {
         final Message message = new Message();
-        message.setUser(null);
-        message.setSubtype("file_comment");
+        message.user = null;
+        message.subtype = "file_comment";
 
         final Comment comment = new Comment();
-        comment.setUser("U12345");
-        message.setComment(comment);
+        comment.user = "U12345";
+        message.comment = comment;
 
         final User user = new User();
-        user.setId("U12345");
+        user.id = "U12345";
         final Profile profile = new Profile();
-        profile.setDisplayName("Comment User");
-        profile.setRealName("Real Name");
-        user.setProfile(profile);
+        profile.displayName = "Comment User";
+        profile.realName = "Real Name";
+        user.profile = profile;
 
         final SlackClient mockClient = new SlackClient(createMockParams()) {
             @Override
@@ -297,13 +297,13 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
     // Test getFileUsername method
     public void test_getFileUsername() throws ExecutionException {
         final File file = new File();
-        file.setUser("U12345");
+        file.user = "U12345";
 
         final User user = new User();
-        user.setId("U12345");
+        user.id = "U12345";
         final Profile profile = new Profile();
-        profile.setDisplayName("File Owner");
-        user.setProfile(profile);
+        profile.displayName = "File Owner";
+        user.profile = profile;
 
         final SlackClient mockClient = new SlackClient(createMockParams()) {
             @Override
@@ -318,7 +318,7 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
 
     public void test_getFileUsername_nullUser() {
         final File file = new File();
-        file.setUser(null);
+        file.user = null;
 
         final SlackClient mockClient = new SlackClient(createMockParams());
         final String username = dataStore.getFileUsername(mockClient, file);
@@ -328,12 +328,12 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
     // Test getUsername method with fallback
     public void test_getUsername_displayName() throws ExecutionException {
         final User user = new User();
-        user.setId("U12345");
+        user.id = "U12345";
         final Profile profile = new Profile();
-        profile.setDisplayName("Display Name");
-        profile.setRealName("Real Name");
-        user.setProfile(profile);
-        user.setName("username");
+        profile.displayName = "Display Name";
+        profile.realName = "Real Name";
+        user.profile = profile;
+        user.name = "username";
 
         final SlackClient mockClient = new SlackClient(createMockParams()) {
             @Override
@@ -348,13 +348,13 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
 
     public void test_getUsername_realName() throws ExecutionException {
         final User user = new User();
-        user.setId("U12345");
+        user.id = "U12345";
         final Profile profile = new Profile();
-        profile.setDisplayName(null);
-        profile.setRealName("Real Name");
-        user.setProfile(profile);
-        user.setRealName("Real Name");
-        user.setName("username");
+        profile.displayName = null;
+        profile.realName = "Real Name";
+        user.profile = profile;
+        user.realName = "Real Name";
+        user.name = "username";
 
         final SlackClient mockClient = new SlackClient(createMockParams()) {
             @Override
@@ -369,13 +369,13 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
 
     public void test_getUsername_name() throws ExecutionException {
         final User user = new User();
-        user.setId("U12345");
+        user.id = "U12345";
         final Profile profile = new Profile();
-        profile.setDisplayName(null);
-        profile.setRealName(null);
-        user.setProfile(profile);
-        user.setRealName(null);
-        user.setName("username");
+        profile.displayName = null;
+        profile.realName = null;
+        user.profile = profile;
+        user.realName = null;
+        user.name = "username";
 
         final SlackClient mockClient = new SlackClient(createMockParams()) {
             @Override
@@ -403,14 +403,14 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
     // Test getMessageAttachmentsText method
     public void test_getMessageAttachmentsText_nullAttachments() {
         final Message message = new Message();
-        message.setAttachments(null);
+        message.attachments = null;
         final String attachmentsText = dataStore.getMessageAttachmentsText(message);
         assertEquals("", attachmentsText);
     }
 
     public void test_getMessageAttachmentsText_emptyAttachments() {
         final Message message = new Message();
-        message.setAttachments(new ArrayList<>());
+        message.attachments = new ArrayList<>();
         final String attachmentsText = dataStore.getMessageAttachmentsText(message);
         assertEquals("", attachmentsText);
     }
@@ -419,9 +419,9 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
         final Message message = new Message();
         final List<Attachment> attachments = new ArrayList<>();
         final Attachment attachment = new Attachment();
-        attachment.setFallback("Attachment 1");
+        attachment.fallback = "Attachment 1";
         attachments.add(attachment);
-        message.setAttachments(attachments);
+        message.attachments = attachments;
 
         final String attachmentsText = dataStore.getMessageAttachmentsText(message);
         assertEquals("Attachment 1", attachmentsText);
@@ -432,14 +432,14 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
         final List<Attachment> attachments = new ArrayList<>();
 
         final Attachment attachment1 = new Attachment();
-        attachment1.setFallback("Attachment 1");
+        attachment1.fallback = "Attachment 1";
         attachments.add(attachment1);
 
         final Attachment attachment2 = new Attachment();
-        attachment2.setFallback("Attachment 2");
+        attachment2.fallback = "Attachment 2";
         attachments.add(attachment2);
 
-        message.setAttachments(attachments);
+        message.attachments = attachments;
 
         final String attachmentsText = dataStore.getMessageAttachmentsText(message);
         assertEquals("Attachment 1\nAttachment 2", attachmentsText);
@@ -448,14 +448,14 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
     // Test getMessagePermalink method
     public void test_getMessagePermalink_existingPermalink() {
         final Message message = new Message();
-        message.setPermalink("https://existing.slack.com/archives/C123/p1234567890");
-        message.setTs("1234567890.123456");
+        message.permalink = "https://existing.slack.com/archives/C123/p1234567890";
+        message.ts = "1234567890.123456";
 
         final Channel channel = new Channel();
-        channel.setId("C123");
+        channel.id = "C123";
 
         final Team team = new Team();
-        team.setDomain("test");
+        team.domain = "test";
 
         final SlackClient mockClient = new SlackClient(createMockParams());
 
@@ -465,14 +465,14 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
 
     public void test_getMessagePermalink_generatedWithTeam() {
         final Message message = new Message();
-        message.setPermalink(null);
-        message.setTs("1234567890.123456");
+        message.permalink = null;
+        message.ts = "1234567890.123456";
 
         final Channel channel = new Channel();
-        channel.setId("C123");
+        channel.id = "C123";
 
         final Team team = new Team();
-        team.setDomain("testteam");
+        team.domain = "testteam";
 
         final SlackClient mockClient = new SlackClient(createMockParams());
 
@@ -482,11 +482,11 @@ public class SlackDataStoreTest extends LastaFluteTestCase {
 
     public void test_getMessagePermalink_generatedWithClient() {
         final Message message = new Message();
-        message.setPermalink(null);
-        message.setTs("1234567890.123456");
+        message.permalink = null;
+        message.ts = "1234567890.123456";
 
         final Channel channel = new Channel();
-        channel.setId("C123");
+        channel.id = "C123";
 
         final SlackClient mockClient = new SlackClient(createMockParams()) {
             @Override
