@@ -15,12 +15,14 @@
  */
 package org.codelibs.fess.ds.slack;
 
-import org.dbflute.utflute.core.PlainTestCase;
+import org.junit.jupiter.api.TestInfo;
+
+import org.codelibs.fess.ds.slack.UnitDsTestCase;
 
 /**
  * Test class for SlackDataStoreException.
  */
-public class SlackDataStoreExceptionTest extends PlainTestCase {
+public class SlackDataStoreExceptionTest extends UnitDsTestCase {
 
     public void test_constructor_withMessage() {
         final String message = "Test error message";

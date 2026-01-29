@@ -15,6 +15,8 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import org.junit.jupiter.api.TestInfo;
+
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
@@ -41,9 +43,9 @@ import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.codelibs.fess.entity.DataStoreParams;
-import org.dbflute.utflute.lastaflute.LastaFluteTestCase;
+import org.codelibs.fess.ds.slack.UnitDsTestCase;
 
-public class SlackClientTest extends LastaFluteTestCase {
+public class SlackClientTest extends UnitDsTestCase {
 
     private static Logger logger = LogManager.getLogger(SlackClientTest.class);
 
@@ -58,13 +60,13 @@ public class SlackClientTest extends LastaFluteTestCase {
     }
 
     @Override
-    public void setUp() throws Exception {
-        super.setUp();
+    public void setUp(TestInfo testInfo) throws Exception {
+        super.setUp(testInfo);
     }
 
     @Override
-    public void tearDown() throws Exception {
-        super.tearDown();
+    public void tearDown(TestInfo testInfo) throws Exception {
+        super.tearDown(testInfo);
     }
 
     public void testProduction() {
