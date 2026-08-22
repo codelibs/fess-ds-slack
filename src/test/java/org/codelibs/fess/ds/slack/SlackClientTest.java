@@ -15,12 +15,11 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 
 import java.util.List;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryRequest;
@@ -42,12 +41,9 @@ import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
-import org.codelibs.fess.entity.DataStoreParams;
 import org.codelibs.fess.ds.slack.UnitDsTestCase;
 
 public class SlackClientTest extends UnitDsTestCase {
-
-    private static Logger logger = LogManager.getLogger(SlackClientTest.class);
 
     @Override
     protected String prepareConfigFile() {
@@ -69,119 +65,7 @@ public class SlackClientTest extends UnitDsTestCase {
         super.tearDown(testInfo);
     }
 
-    public void testProduction() {
-        // doProductionTest();
-    }
-
-    protected void doProductionTest() {
-        final SlackClient client = new SlackClient(new DataStoreParams());
-        doConversationsListTest(client);
-        doConversationsHistoryTest(client);
-        doConversationsInfoTest(client);
-        doUsersListTest(client);
-        doUsersInfoTest(client);
-        doFilesListTest(client);
-        doFilesInfoTest(client);
-        // doBotsInfoTest(client, "");
-        // doChatGetPermalinkTest(client, "", "");
-        // doConversationsRepliesTest(client, "", "");
-        doTeamInfoTest(client);
-    }
-
-    protected void doConversationsListTest(final SlackClient client) {
-        logger.info("----------ConversationsList----------");
-        logger.info("Channels: ");
-        for (final Channel channel : client.conversationsList().limit(5).execute().getChannels()) {
-            logger.info("#" + channel.getName());
-        }
-    }
-
-    protected void doConversationsHistoryTest(final SlackClient client) {
-        logger.info("----------ConversationsHistory----------");
-        final Channel channel = client.conversationsList().limit(1).execute().getChannels().get(0);
-        logger.info("History of #" + channel.getName());
-        final ConversationsHistoryResponse response = client.conversationsHistory(channel.getId()).limit(5).execute();
-        for (final Message message : response.getMessages()) {
-            logger.info(message.getUser() + ": " + message.getText());
-        }
-        logger.info("hasMore: " + response.hasMore());
-    }
-
-    protected void doConversationsInfoTest(final SlackClient client) {
-        logger.info("----------ConversationsInfo----------");
-        final String id = client.conversationsList().limit(1).execute().getChannels().get(0).getId();
-        logger.info("Channel: " + id);
-        final Channel channel = client.conversationsInfo(id).execute().getChannel();
-        logger.info("#" + channel.getName());
-    }
-
-    protected void doConversationsRepliesTest(final SlackClient client, final String channel, final String ts) {
-        logger.info("----------ConversationsReplies----------");
-        final ConversationsRepliesResponse response = client.conversationsReplies(channel, ts).execute();
-        final List<Message> messages = response.getMessages();
-        for (int i = 1; i < messages.size(); i++) {
-            logger.info(messages.get(i).getUser() + ": " + messages.get(i).getText());
-        }
-        logger.info("hasMore: " + response.hasMore());
-    }
-
-    protected void doUsersListTest(final SlackClient client) {
-        logger.info("----------UsersList----------");
-        logger.info("Users: ");
-        final UsersListResponse response = client.usersList().limit(5).execute();
-        for (final User user : response.getMembers()) {
-            logger.info(user.getProfile().getDisplayName());
-        }
-        logger.info("next_cursor: " + response.getResponseMetadata().getNextCursor());
-    }
-
-    protected void doUsersInfoTest(final SlackClient client) {
-        logger.info("----------UsersInfo----------");
-        final String id = client.usersList().limit(1).execute().getMembers().get(0).getId();
-        logger.info("User: " + id);
-        final User user = client.usersInfo(id).execute().getUser();
-        logger.info(user.getProfile().getDisplayName());
-    }
-
-    protected void doFilesListTest(final SlackClient client) {
-        logger.info("----------FilesList----------");
-        logger.info("Files: ");
-        final FilesListResponse response = client.filesList().count(5).execute();
-        for (final File file : response.getFiles()) {
-            logger.info(file.getName() + "  " + file.getMimetype());
-        }
-        logger.info("count: " + response.getPaging().getCount());
-    }
-
-    protected void doFilesInfoTest(final SlackClient client) {
-        logger.info("----------FilesInfo----------");
-        final String id = client.filesList().count(1).execute().getFiles().get(0).getId();
-        logger.info("File: " + id);
-        final File file = client.filesInfo(id).execute().getFile();
-        logger.info(file.getName() + "  " + file.getMimetype());
-    }
-
-    protected void doBotsInfoTest(final SlackClient client, final String id) {
-        logger.info("----------BotsInfo----------");
-        logger.info("Bot: " + id);
-        final Bot bot = client.botsInfo().bot(id).execute().getBot();
-        logger.info(bot.getName());
-    }
-
-    protected void doChatGetPermalinkTest(final SlackClient client, final String channel, final String ts) {
-        logger.info("----------ChatGetPermalink----------");
-        logger.info("Channel: " + channel + ", Timestamp: " + ts);
-        final String link = client.chatGetPermalink(channel, ts).execute().getPermalink();
-        logger.info(link);
-    }
-
-    protected void doTeamInfoTest(final SlackClient client) {
-        logger.info("----------TeamInfo----------");
-        logger.info("Team: ");
-        final Team team = client.teamInfo().execute().getTeam();
-        logger.info(team.getName() + " https://" + team.getDomain() + ".slack.com/");
-    }
-
+    @Test
     public void testConversationsList() {
         final String content = "" + //
                 "{" + //
@@ -205,12 +89,13 @@ public class SlackClientTest extends UnitDsTestCase {
         assertTrue(response.ok());
         final List<Channel> channels = response.getChannels();
         for (int i = 0; i < channels.size(); i++) {
-            assertEquals(channels.get(i).getId(), "CHANNEL_ID" + i);
-            assertEquals(channels.get(i).getName(), "CHANNEL_Name" + i);
+            assertEquals("CHANNEL_ID" + i, channels.get(i).getId());
+            assertEquals("CHANNEL_Name" + i, channels.get(i).getName());
         }
-        assertEquals(response.getResponseMetadata().getNextCursor(), "NEXT_CURSOR");
+        assertEquals("NEXT_CURSOR", response.getResponseMetadata().getNextCursor());
     }
 
+    @Test
     public void testConversationsHistory() {
         final String content = "" + //
                 "{" + //
@@ -243,17 +128,18 @@ public class SlackClientTest extends UnitDsTestCase {
         final ConversationsHistoryResponse response = request.parseResponse(content, ConversationsHistoryResponse.class);
         assertTrue(response.ok());
         final List<Message> messages = response.getMessages();
-        assertEquals(messages.get(0).getUser(), "USER");
-        assertEquals(messages.get(0).getText(), "TEXT");
-        assertEquals(messages.get(0).getTs(), "1234567890.000100");
+        assertEquals("USER", messages.get(0).getUser());
+        assertEquals("TEXT", messages.get(0).getText());
+        assertEquals("1234567890.000100", messages.get(0).getTs());
         final Attachment attach = messages.get(1).getAttachments().get(0);
-        assertEquals(attach.getFallback(), "FALLBACK");
+        assertEquals("FALLBACK", attach.getFallback());
         final File file = messages.get(1).getFiles().get(0);
-        assertEquals(file.getId(), "FILE_ID");
+        assertEquals("FILE_ID", file.getId());
         assertTrue(response.hasMore());
-        assertEquals(response.getResponseMetadata().getNextCursor(), "NEXT_CURSOR");
+        assertEquals("NEXT_CURSOR", response.getResponseMetadata().getNextCursor());
     }
 
+    @Test
     public void testUsersList() {
         final String content = "" + //
                 "{" + //
@@ -279,12 +165,13 @@ public class SlackClientTest extends UnitDsTestCase {
         assertTrue(response.ok());
         final List<User> members = response.getMembers();
         for (int i = 0; i < members.size(); i++) {
-            assertEquals(members.get(i).getId(), "ID" + i);
-            assertEquals(members.get(i).getName(), "NAME" + i);
-            assertEquals(members.get(i).getProfile().getDisplayName(), "DISPLAY_NAME" + i);
+            assertEquals("ID" + i, members.get(i).getId());
+            assertEquals("NAME" + i, members.get(i).getName());
+            assertEquals("DISPLAY_NAME" + i, members.get(i).getProfile().getDisplayName());
         }
     }
 
+    @Test
     public void testFilesList() {
         final String content = "" + //
                 "{" + //
@@ -309,13 +196,14 @@ public class SlackClientTest extends UnitDsTestCase {
         assertTrue(response.ok());
         final List<File> files = response.getFiles();
         for (int i = 0; i < files.size(); i++) {
-            assertEquals(files.get(i).getId(), "FILE_ID" + i);
-            assertEquals(files.get(i).getTimestamp(), Long.valueOf(1234567890));
-            assertEquals(files.get(i).getThumb360(), "THUMBNAIL" + i);
+            assertEquals("FILE_ID" + i, files.get(i).getId());
+            assertEquals(Long.valueOf(1234567890), files.get(i).getTimestamp());
+            assertEquals("THUMBNAIL" + i, files.get(i).getThumb360());
         }
-        assertEquals(response.getPaging().getCount(), Integer.valueOf(2));
+        assertEquals(Integer.valueOf(2), response.getPaging().getCount());
     }
 
+    @Test
     public void testBotsInfo() {
         final String content = "" + //
                 "{" + //
@@ -328,10 +216,11 @@ public class SlackClientTest extends UnitDsTestCase {
         final BotsInfoResponse response = new BotsInfoRequest(null).parseResponse(content, BotsInfoResponse.class);
         assertTrue(response.ok());
         final Bot bot = response.getBot();
-        assertEquals(bot.getId(), "BOT_ID");
-        assertEquals(bot.getName(), "BOT_NAME");
+        assertEquals("BOT_ID", bot.getId());
+        assertEquals("BOT_NAME", bot.getName());
     }
 
+    @Test
     public void testTeamInfo() {
         final String content = "" + //
                 "{" + //
@@ -345,12 +234,13 @@ public class SlackClientTest extends UnitDsTestCase {
         final TeamInfoResponse response = new TeamInfoRequest(null).parseResponse(content, TeamInfoResponse.class);
         assertTrue(response.ok());
         final Team team = response.getTeam();
-        assertEquals(team.getId(), "TEAM_ID");
-        assertEquals(team.getName(), "TEAM_NAME");
-        assertEquals(team.getDomain(), "TEAM_DOMAIN");
+        assertEquals("TEAM_ID", team.getId());
+        assertEquals("TEAM_NAME", team.getName());
+        assertEquals("TEAM_DOMAIN", team.getDomain());
     }
 
     // Test error responses
+    @Test
     public void testConversationsList_errorResponse() {
         final String content = "" + //
                 "{" + //
@@ -362,6 +252,7 @@ public class SlackClientTest extends UnitDsTestCase {
         assertFalse(response.ok());
     }
 
+    @Test
     public void testConversationsHistory_errorResponse() {
         final String content = "" + //
                 "{" + //
@@ -373,6 +264,7 @@ public class SlackClientTest extends UnitDsTestCase {
         assertFalse(response.ok());
     }
 
+    @Test
     public void testUsersList_errorResponse() {
         final String content = "" + //
                 "{" + //
@@ -383,6 +275,7 @@ public class SlackClientTest extends UnitDsTestCase {
         assertFalse(response.ok());
     }
 
+    @Test
     public void testFilesList_errorResponse() {
         final String content = "" + //
                 "{" + //
@@ -393,6 +286,7 @@ public class SlackClientTest extends UnitDsTestCase {
         assertFalse(response.ok());
     }
 
+    @Test
     public void testBotsInfo_errorResponse() {
         final String content = "" + //
                 "{" + //
@@ -403,6 +297,7 @@ public class SlackClientTest extends UnitDsTestCase {
         assertFalse(response.ok());
     }
 
+    @Test
     public void testTeamInfo_errorResponse() {
         final String content = "" + //
                 "{" + //
@@ -414,6 +309,7 @@ public class SlackClientTest extends UnitDsTestCase {
     }
 
     // Test edge cases
+    @Test
     public void testConversationsList_emptyChannels() {
         final String content = "" + //
                 "{" + //
@@ -432,6 +328,7 @@ public class SlackClientTest extends UnitDsTestCase {
         assertEquals("", response.getResponseMetadata().getNextCursor());
     }
 
+    @Test
     public void testConversationsHistory_emptyMessages() {
         final String content = "" + //
                 "{" + //
@@ -451,6 +348,7 @@ public class SlackClientTest extends UnitDsTestCase {
         assertFalse(response.hasMore());
     }
 
+    @Test
     public void testUsersList_emptyMembers() {
         final String content = "" + //
                 "{" + //
@@ -464,6 +362,7 @@ public class SlackClientTest extends UnitDsTestCase {
         assertEquals(0, members.size());
     }
 
+    @Test
     public void testFilesList_emptyFiles() {
         final String content = "" + //
                 "{" + //
@@ -482,6 +381,7 @@ public class SlackClientTest extends UnitDsTestCase {
     }
 
     // Test multiple attachments in a single message
+    @Test
     public void testConversationsHistory_multipleAttachments() {
         final String content = "" + //
                 "{" + //
@@ -516,6 +416,7 @@ public class SlackClientTest extends UnitDsTestCase {
     }
 
     // Test multiple files in a single message
+    @Test
     public void testConversationsHistory_multipleFiles() {
         final String content = "" + //
                 "{" + //
@@ -550,6 +451,7 @@ public class SlackClientTest extends UnitDsTestCase {
     }
 
     // Test ConversationsRepliesResponse
+    @Test
     public void testConversationsReplies() {
         final String content = "" + //
                 "{" + //
@@ -586,6 +488,7 @@ public class SlackClientTest extends UnitDsTestCase {
     }
 
     // Test pagination
+    @Test
     public void testConversationsList_withPagination() {
         final String content = "" + //
                 "{" + //
@@ -611,6 +514,7 @@ public class SlackClientTest extends UnitDsTestCase {
     }
 
     // Test FilesListResponse with paging
+    @Test
     public void testFilesList_withPaging() {
         final String content = "" + //
                 "{" + //
