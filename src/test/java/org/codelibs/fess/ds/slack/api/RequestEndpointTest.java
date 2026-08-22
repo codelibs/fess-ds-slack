@@ -18,6 +18,13 @@ package org.codelibs.fess.ds.slack.api;
 import org.codelibs.fess.ds.slack.UnitDsTestCase;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Mutates {@link Request}'s process-wide static endpoint field, the same global
+ * {@link org.codelibs.fess.ds.slack.SlackApiMockServer} points at {@code Request.setEndpoint}
+ * during {@code start()}/{@code stop()}. Safe today only because surefire runs every test class
+ * in this module sequentially in one JVM; running test classes in parallel would let this race
+ * with any test using the mock server.
+ */
 public class RequestEndpointTest extends UnitDsTestCase {
 
     @Test

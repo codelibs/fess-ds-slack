@@ -66,8 +66,14 @@ public abstract class Request<T extends Response> {
      * stub server; production code must not call this.
      *
      * @param endpoint the endpoint URL, which must end with a slash
+     * @throws IllegalArgumentException if {@code endpoint} is {@code null} or does not end with
+     *             a slash; either would otherwise silently concatenate into a malformed URL
+     *             such as {@code "nullteam.info"} or {@code ".../apiteam.info"}
      */
     public static void setEndpoint(final String endpoint) {
+        if (endpoint == null || !endpoint.endsWith("/")) {
+            throw new IllegalArgumentException("endpoint must be non-null and end with '/': " + endpoint);
+        }
         slackApiEndpoint = endpoint;
     }
 
