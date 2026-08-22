@@ -60,6 +60,9 @@ import org.codelibs.fess.helper.CrawlerStatsHelper.StatsKeyObject;
 import org.codelibs.fess.opensearch.config.exentity.DataConfig;
 import org.codelibs.fess.util.ComponentUtil;
 
+import com.google.common.cache.CacheLoader.InvalidCacheLoadException;
+import com.google.common.util.concurrent.UncheckedExecutionException;
+
 /**
  * Slack Data Store implementation that enables Fess to crawl and index Slack content
  * including channels, messages, and files. This data store connects to the Slack API
@@ -705,7 +708,7 @@ public class SlackDataStore extends AbstractDataStore {
                     return user.getName();
                 }
             }
-        } catch (final ExecutionException e) {
+        } catch (final ExecutionException | UncheckedExecutionException | InvalidCacheLoadException e) {
             logger.warn("Failed to get username from user: {}", userId, e);
         }
         return userId;

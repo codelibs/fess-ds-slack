@@ -53,7 +53,9 @@ import org.codelibs.fess.entity.DataStoreParams;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
+import com.google.common.cache.CacheLoader.InvalidCacheLoadException;
 import com.google.common.cache.LoadingCache;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 
 /**
  * Slack Web API client that provides high-level access to Slack data including
@@ -450,8 +452,13 @@ public class SlackClient implements Closeable {
                     continue;
                 }
                 try {
-                    consumer.accept(getChannel(name));
-                } catch (final ExecutionException e) {
+                    final Channel channel = getChannel(name);
+                    if (channel != null) {
+                        consumer.accept(channel);
+                    } else {
+                        logger.warn("Channel not found: {}", name);
+                    }
+                } catch (final ExecutionException | UncheckedExecutionException | InvalidCacheLoadException e) {
                     logger.warn("Failed to get a channel: {}", name, e);
                 }
             }

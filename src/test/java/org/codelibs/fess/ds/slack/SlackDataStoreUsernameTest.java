@@ -89,6 +89,25 @@ public class SlackDataStoreUsernameTest extends UnitDsTestCase {
         assertEquals("Top Real", usernameFor("{\"id\":\"U1\",\"name\":\"login\",\"real_name\":\"Top Real\"}"));
     }
 
+    /**
+     * An unresolvable user ID must not abort the crawl: Guava's LoadingCache
+     * raises the unchecked {@code InvalidCacheLoadException} when the loader
+     * returns null, which a bare {@code catch (ExecutionException)} does not
+     * catch.
+     */
+    @Test
+    public void test_unknownUserIdFallsBackToUserIdInsteadOfThrowing() {
+        server.enqueue("/api/users.list",
+                SlackApiMockServer.json("{\"ok\":true,\"members\":[],\"response_metadata\":{\"next_cursor\":\"\"}}"));
+        server.enqueue("/api/users.info", SlackApiMockServer.json("{\"ok\":false,\"error\":\"user_not_found\"}"));
+
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-test");
+        final SlackClient client = server.newClient(paramMap);
+
+        assertEquals("U404", dataStore.getUsername(client, "U404"));
+    }
+
     private String usernameFor(final String userJson) {
         server.enqueue("/api/users.list",
                 SlackApiMockServer.json("{\"ok\":true,\"members\":[" + userJson + "],\"response_metadata\":{\"next_cursor\":\"\"}}"));
