@@ -43,10 +43,40 @@ public abstract class Request<T extends Response> {
     /** Function for creating DELETE HTTP requests */
     public static final Function<String, CurlRequest> DELETE = Curl::delete;
 
-    /** Base URL for all Slack API endpoints */
-    protected static final String SLACK_API_ENDPOINT = "https://slack.com/api/";
+    /** The default Slack Web API endpoint. */
+    protected static final String DEFAULT_SLACK_API_ENDPOINT = "https://slack.com/api/";
+
+    /** The Slack Web API endpoint in effect. Overridable for testing. */
+    private static volatile String slackApiEndpoint = DEFAULT_SLACK_API_ENDPOINT;
+
     /** Jackson ObjectMapper for JSON parsing */
     protected static final ObjectMapper mapper = new ObjectMapper();
+
+    /**
+     * Returns the Slack Web API endpoint currently in effect.
+     *
+     * @return the endpoint URL, always ending with a slash
+     */
+    protected static String getEndpoint() {
+        return slackApiEndpoint;
+    }
+
+    /**
+     * Overrides the Slack Web API endpoint. Intended for testing against a local
+     * stub server; production code must not call this.
+     *
+     * @param endpoint the endpoint URL, which must end with a slash
+     */
+    public static void setEndpoint(final String endpoint) {
+        slackApiEndpoint = endpoint;
+    }
+
+    /**
+     * Restores the Slack Web API endpoint to {@link #DEFAULT_SLACK_API_ENDPOINT}.
+     */
+    public static void resetEndpoint() {
+        slackApiEndpoint = DEFAULT_SLACK_API_ENDPOINT;
+    }
 
     /** Authentication credentials for Slack API access */
     protected Authentication authentication;
@@ -94,7 +124,7 @@ public abstract class Request<T extends Response> {
      */
     public CurlRequest getCurlRequest(final Function<String, CurlRequest> method, final String path) {
         final StringBuilder buf = new StringBuilder(100);
-        buf.append(SLACK_API_ENDPOINT);
+        buf.append(getEndpoint());
         if (path != null) {
             buf.append(path);
         }
