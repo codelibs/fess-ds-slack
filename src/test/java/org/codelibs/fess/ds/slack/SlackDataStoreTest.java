@@ -145,8 +145,9 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     // Test setExtractorName method
     @Test
     public void test_setExtractorName() {
-        dataStore.setExtractorName("tikaExtractor");
         assertEquals("tikaExtractor", dataStore.extractorName);
+        dataStore.setExtractorName("customExtractor");
+        assertEquals("customExtractor", dataStore.extractorName);
     }
 
     // Test thread pool creation
