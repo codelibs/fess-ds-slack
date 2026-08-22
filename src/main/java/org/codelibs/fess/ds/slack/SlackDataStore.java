@@ -213,10 +213,16 @@ public class SlackDataStore extends AbstractDataStore {
         return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(IGNORE_ERROR, Constants.TRUE));
     }
 
-    private List<String> getSupportedMimeTypes(final DataStoreParams paramMap) {
-        return Arrays.stream(StringUtil.split(paramMap.getAsString(SUPPORTED_MIMETYPES, ".*"), ","))
-                .map(String::trim)
-                .collect(Collectors.toList());
+    /**
+     * Extracts the list of supported MIME type patterns from parameters.
+     *
+     * @param paramMap the configuration parameters
+     * @return the list of supported MIME type patterns
+     */
+    protected List<String> getSupportedMimeTypes(final DataStoreParams paramMap) {
+        final String value = paramMap.getAsString(SUPPORTED_MIMETYPES, ".*");
+        final String effective = StringUtil.isNotBlank(value) ? value : ".*";
+        return Arrays.stream(StringUtil.split(effective, ",")).map(String::trim).collect(Collectors.toList());
     }
 
     /**
