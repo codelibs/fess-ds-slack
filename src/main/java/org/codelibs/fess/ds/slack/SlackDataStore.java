@@ -30,6 +30,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -516,7 +517,8 @@ public class SlackDataStore extends AbstractDataStore {
             }
 
             final String fileContent = getFileContent(client, file, ignoreError);
-            fileMap.put(MESSAGE_TITLE, file.getName() + " " + file.getTitle());
+            fileMap.put(MESSAGE_TITLE,
+                    Stream.of(file.getName(), file.getTitle()).filter(StringUtil::isNotBlank).collect(Collectors.joining(" ")));
             fileMap.put(MESSAGE_TEXT, file.getName() + "\n" + fileContent);
             // fileMap.put(MESSAGE_TEAM, team.getName());
             fileMap.put(MESSAGE_TIMESTAMP, getFileTimestamp(file));
@@ -706,10 +708,9 @@ public class SlackDataStore extends AbstractDataStore {
     protected String getMessageAttachmentsText(final Message message) {
         final List<Attachment> attachments = message.getAttachments();
         if (attachments == null) {
-            return "";
+            return StringUtil.EMPTY;
         }
-        final List<String> fallbacks = attachments.stream().map(Attachment::getFallback).collect(Collectors.toList());
-        return String.join("\n", fallbacks);
+        return attachments.stream().map(Attachment::getFallback).filter(StringUtil::isNotBlank).collect(Collectors.joining("\n"));
     }
 
     /**
