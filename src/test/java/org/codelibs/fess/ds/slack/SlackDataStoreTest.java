@@ -18,12 +18,7 @@ package org.codelibs.fess.ds.slack;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 
-import org.codelibs.fess.app.service.FailureUrlService;
 import org.codelibs.fess.entity.DataStoreParams;
-import org.codelibs.fess.helper.CrawlerStatsHelper;
-import org.codelibs.fess.helper.SystemHelper;
-import org.codelibs.fess.opensearch.config.exentity.CrawlingConfig;
-import org.codelibs.fess.opensearch.config.exentity.FailureUrl;
 import org.codelibs.fess.util.ComponentUtil;
 import org.codelibs.fess.ds.slack.UnitDsTestCase;
 
@@ -45,16 +40,6 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     public void setUp(TestInfo testInfo) throws Exception {
         super.setUp(testInfo);
         dataStore = new SlackDataStore();
-        ComponentUtil.register(new SystemHelper(), "systemHelper");
-        final CrawlerStatsHelper crawlerStatsHelper = new CrawlerStatsHelper();
-        crawlerStatsHelper.init();
-        ComponentUtil.register(crawlerStatsHelper, "crawlerStatsHelper");
-        ComponentUtil.register(new FailureUrlService() {
-            @Override
-            public FailureUrl store(final CrawlingConfig crawlingConfig, final String errorName, final String url, final Throwable e) {
-                return null;
-            }
-        }, FailureUrlService.class.getCanonicalName());
     }
 
     @Override
