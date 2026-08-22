@@ -444,11 +444,15 @@ public class SlackClient implements Closeable {
         if (!paramMap.containsKey(CHANNELS_PARAM) || CHANNELS_ALL.equals(paramMap.get(CHANNELS_PARAM))) {
             getAllChannels(consumer);
         } else {
-            for (final String name : paramMap.getAsString(CHANNELS_PARAM, StringUtil.EMPTY).split(CHANNELS_SEPARATOR)) {
+            for (final String rawName : paramMap.getAsString(CHANNELS_PARAM, StringUtil.EMPTY).split(CHANNELS_SEPARATOR)) {
+                final String name = rawName.trim();
+                if (StringUtil.isBlank(name)) {
+                    continue;
+                }
                 try {
                     consumer.accept(getChannel(name));
                 } catch (final ExecutionException e) {
-                    logger.warn("Failed to get a channel.", e);
+                    logger.warn("Failed to get a channel: {}", name, e);
                 }
             }
         }
