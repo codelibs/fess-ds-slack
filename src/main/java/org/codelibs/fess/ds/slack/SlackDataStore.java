@@ -668,9 +668,7 @@ public class SlackDataStore extends AbstractDataStore {
                     return client.getBot(message.getBotId()).getName();
                 }
                 if ("file_comment".equals(message.getSubtype())) {
-                    final User user = client.getUser(message.getComment().getUser());
-                    return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName()
-                            : user.getProfile().getRealName();
+                    return getUsername(client, message.getComment().getUser());
                 }
             }
         } catch (final Exception e) {

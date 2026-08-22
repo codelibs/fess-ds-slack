@@ -15,6 +15,9 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryRequest;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
+import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.entity.DataStoreParams;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
@@ -108,6 +111,26 @@ public class SlackDataStoreUsernameTest extends UnitDsTestCase {
         assertEquals("U404", dataStore.getUsername(client, "U404"));
     }
 
+    /**
+     * A file_comment message whose commenter has no profile at all -- the case for a
+     * Slack Connect external member -- must not throw and must still fall back to a
+     * usable name, the same as {@link SlackDataStore#getUsername}.
+     */
+    @Test
+    public void test_fileCommentMissingProfileFallsBackToTopLevelRealName() {
+        assertEquals("Top Real", fileCommentUsernameFor("{\"id\":\"U1\",\"name\":\"login\",\"real_name\":\"Top Real\"}"));
+    }
+
+    /**
+     * file_comment must blank-test the display name rather than call isEmpty() on a
+     * possibly-null string.
+     */
+    @Test
+    public void test_fileCommentNullDisplayNameFallsThroughToProfileRealName() {
+        assertEquals("Profile Real", fileCommentUsernameFor("{\"id\":\"U1\",\"name\":\"login\",\"real_name\":\"Top Real\","
+                + "\"profile\":{\"display_name\":null,\"real_name\":\"Profile Real\"}}"));
+    }
+
     private String usernameFor(final String userJson) {
         server.enqueue("/api/users.list",
                 SlackApiMockServer.json("{\"ok\":true,\"members\":[" + userJson + "],\"response_metadata\":{\"next_cursor\":\"\"}}"));
@@ -115,5 +138,19 @@ public class SlackDataStoreUsernameTest extends UnitDsTestCase {
         paramMap.put("token", "xoxb-test");
         final SlackClient client = server.newClient(paramMap);
         return dataStore.getUsername(client, "U1");
+    }
+
+    private String fileCommentUsernameFor(final String userJson) {
+        server.enqueue("/api/users.list",
+                SlackApiMockServer.json("{\"ok\":true,\"members\":[" + userJson + "],\"response_metadata\":{\"next_cursor\":\"\"}}"));
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-test");
+        final SlackClient client = server.newClient(paramMap);
+        final Message message = new ConversationsHistoryRequest(null, null)
+                .parseResponse("{\"ok\":true,\"messages\":[{\"subtype\":\"file_comment\",\"comment\":{\"user\":\"U1\"}}]}",
+                        ConversationsHistoryResponse.class)
+                .getMessages()
+                .get(0);
+        return dataStore.getMessageUsername(client, message);
     }
 }
