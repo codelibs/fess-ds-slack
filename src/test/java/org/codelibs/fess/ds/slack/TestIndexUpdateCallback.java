@@ -16,6 +16,7 @@
 package org.codelibs.fess.ds.slack;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,10 +27,18 @@ import org.codelibs.fess.entity.DataStoreParams;
 /**
  * Collects the documents handed to {@link IndexUpdateCallback#store} so that
  * tests can assert on what would have been indexed.
+ *
+ * <p>
+ * {@code store} runs on whichever worker thread {@code SlackDataStore}'s
+ * {@code executorService} dispatches it to, so this class must tolerate
+ * concurrent calls: the backing list is a {@linkplain Collections#synchronizedList
+ * synchronized list}, and {@link #getDataMaps()} hands back a defensive
+ * snapshot copy rather than the live list.
+ * </p>
  */
 public class TestIndexUpdateCallback implements IndexUpdateCallback {
 
-    private final List<Map<String, Object>> dataMaps = new ArrayList<>();
+    private final List<Map<String, Object>> dataMaps = Collections.synchronizedList(new ArrayList<>());
 
     @Override
     public void store(final DataStoreParams paramMap, final Map<String, Object> dataMap) {
@@ -52,12 +61,12 @@ public class TestIndexUpdateCallback implements IndexUpdateCallback {
     }
 
     /**
-     * Returns the collected documents in the order they were stored.
+     * Returns a snapshot copy of the collected documents, in the order they were stored.
      *
-     * @return the stored data maps
+     * @return a defensive copy of the stored data maps
      */
     public List<Map<String, Object>> getDataMaps() {
-        return dataMaps;
+        return new ArrayList<>(dataMaps);
     }
 
     /**
