@@ -607,13 +607,25 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
-     * Converts a file timestamp to a Date object.
+     * Converts a file's creation time to a Date object. Slack documents
+     * {@code timestamp} as deprecated and kept only for backwards
+     * compatibility, so {@code created} is preferred; {@code timestamp} is
+     * used only when {@code created} is absent.
      *
-     * @param file the file containing the timestamp
-     * @return the timestamp as a Date object
+     * @param file the file containing the creation time
+     * @return the creation time as a Date object, or null if the file carries
+     *         neither {@code created} nor {@code timestamp}
      */
     protected Date getFileTimestamp(final File file) {
-        return new Date(file.getTimestamp() * 1000L);
+        final Long created = file.getCreated();
+        if (created != null) {
+            return new Date(created.longValue() * 1000L);
+        }
+        final Long timestamp = file.getTimestamp();
+        if (timestamp != null) {
+            return new Date(timestamp.longValue() * 1000L);
+        }
+        return null;
     }
 
     /**

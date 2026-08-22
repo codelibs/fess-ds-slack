@@ -39,6 +39,9 @@ public class File {
     /** Unix timestamp when the file was uploaded */
     protected Long timestamp;
 
+    /** Unix timestamp of when the file was created. */
+    protected Long created;
+
     /** Original filename */
     protected String name;
 
@@ -98,6 +101,15 @@ public class File {
      */
     public Long getTimestamp() {
         return timestamp;
+    }
+
+    /**
+     * Returns the creation time of this file as a Unix timestamp in seconds.
+     *
+     * @return the creation time, or null if absent
+     */
+    public Long getCreated() {
+        return created;
     }
 
     /**

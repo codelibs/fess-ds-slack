@@ -17,6 +17,9 @@ package org.codelibs.fess.ds.slack;
 
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
+import org.codelibs.fess.ds.slack.api.method.files.FilesListRequest;
+import org.codelibs.fess.ds.slack.api.method.files.FilesListResponse;
+import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
@@ -49,6 +52,36 @@ public class SlackDataStoreFieldValueTest extends UnitDsTestCase {
     public void test_absentAttachmentsProduceEmptyString() {
         final Message message = firstMessage("{\"ok\":true,\"messages\":[{\"text\":\"TEXT\"}]}");
         assertEquals("", dataStore.getMessageAttachmentsText(message));
+    }
+
+    /** `created` is authoritative; `timestamp` is deprecated by Slack. */
+    @Test
+    public void test_fileTimestampUsesCreated() {
+        final File file = new FilesListRequest(null)
+                .parseResponse("{\"ok\":true,\"files\":[{\"id\":\"F1\",\"created\":1531763254,\"timestamp\":1400000000}]}",
+                        FilesListResponse.class)
+                .getFiles()
+                .get(0);
+        assertEquals(1531763254000L, dataStore.getFileTimestamp(file).getTime());
+    }
+
+    /** With no `created`, fall back rather than throwing. */
+    @Test
+    public void test_fileTimestampWithoutCreatedFallsBackToTimestamp() {
+        final File file = new FilesListRequest(null)
+                .parseResponse("{\"ok\":true,\"files\":[{\"id\":\"F1\",\"timestamp\":1400000000}]}", FilesListResponse.class)
+                .getFiles()
+                .get(0);
+        assertEquals(1400000000000L, dataStore.getFileTimestamp(file).getTime());
+    }
+
+    /** With neither field present, there is nothing to date the file by. */
+    @Test
+    public void test_fileTimestampWithoutEitherFieldReturnsNull() {
+        final File file = new FilesListRequest(null).parseResponse("{\"ok\":true,\"files\":[{\"id\":\"F1\"}]}", FilesListResponse.class)
+                .getFiles()
+                .get(0);
+        assertNull("no created or timestamp field", dataStore.getFileTimestamp(file));
     }
 
     private Message firstMessage(final String content) {
