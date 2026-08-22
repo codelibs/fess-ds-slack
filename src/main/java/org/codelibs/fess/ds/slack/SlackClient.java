@@ -472,17 +472,19 @@ public class SlackClient implements Closeable {
      * @param consumer the function to process each file
      */
     public void getChannelFiles(final String channelId, final Integer count, final Consumer<File> consumer) {
-        FilesListResponse response = filesList().channel(channelId).types(getFileTypes()).count(count).execute();
+        int page = 1;
         while (true) {
+            final FilesListResponse response = filesList().channel(channelId).types(getFileTypes()).count(count).page(page).execute();
             if (!response.ok()) {
                 logger.warn("Slack API error occured on \"files.list\": {}", response.responseBody());
                 return;
             }
             response.getFiles().forEach(consumer);
-            if (response.getPaging().getPage() >= response.getPaging().getTotal()) {
+            final FilesListResponse.Paging paging = response.getPaging();
+            if (paging == null || paging.getPages() == null || page >= paging.getPages().intValue()) {
                 break;
             }
-            response = filesList().channel(channelId).count(count).page(response.getPaging().getPage() + 1).execute();
+            page++;
         }
     }
 
