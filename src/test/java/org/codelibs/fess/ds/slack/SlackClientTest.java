@@ -88,6 +88,9 @@ public class SlackClientTest extends UnitDsTestCase {
                 new ConversationsListRequest(null).parseResponse(content, ConversationsListResponse.class);
         assertTrue(response.ok());
         final List<Channel> channels = response.getChannels();
+        // Asserted up front so a regression that empties the list (e.g. a broken Jackson
+        // mapping) fails here instead of silently skipping every iteration below.
+        assertEquals(2, channels.size());
         for (int i = 0; i < channels.size(); i++) {
             assertEquals("CHANNEL_ID" + i, channels.get(i).getId());
             assertEquals("CHANNEL_Name" + i, channels.get(i).getName());
@@ -164,6 +167,9 @@ public class SlackClientTest extends UnitDsTestCase {
         final UsersListResponse response = new UsersListRequest(null).parseResponse(content, UsersListResponse.class);
         assertTrue(response.ok());
         final List<User> members = response.getMembers();
+        // Asserted up front so a regression that empties the list (e.g. a broken Jackson
+        // mapping) fails here instead of silently skipping every iteration below.
+        assertEquals(2, members.size());
         for (int i = 0; i < members.size(); i++) {
             assertEquals("ID" + i, members.get(i).getId());
             assertEquals("NAME" + i, members.get(i).getName());
@@ -195,6 +201,9 @@ public class SlackClientTest extends UnitDsTestCase {
         final FilesListResponse response = new FilesListRequest(null).parseResponse(content, FilesListResponse.class);
         assertTrue(response.ok());
         final List<File> files = response.getFiles();
+        // Asserted up front so a regression that empties the list (e.g. a broken Jackson
+        // mapping) fails here instead of silently skipping every iteration below.
+        assertEquals(2, files.size());
         for (int i = 0; i < files.size(); i++) {
             assertEquals("FILE_ID" + i, files.get(i).getId());
             assertEquals(Long.valueOf(1234567890), files.get(i).getTimestamp());
