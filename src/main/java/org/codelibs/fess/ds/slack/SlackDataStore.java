@@ -542,7 +542,7 @@ public class SlackDataStore extends AbstractDataStore {
             final String fileContent = getFileContent(client, file, ignoreError);
             fileMap.put(MESSAGE_TITLE,
                     Stream.of(file.getName(), file.getTitle()).filter(StringUtil::isNotBlank).collect(Collectors.joining(" ")));
-            fileMap.put(MESSAGE_TEXT, file.getName() + "\n" + fileContent);
+            fileMap.put(MESSAGE_TEXT, getFileText(file, fileContent));
             // fileMap.put(MESSAGE_TEAM, team.getName());
             fileMap.put(MESSAGE_TIMESTAMP, getFileTimestamp(file));
             fileMap.put(MESSAGE_USER, getFileUsername(client, file));
@@ -770,6 +770,19 @@ public class SlackDataStore extends AbstractDataStore {
             }
         }
         return permalink;
+    }
+
+    /**
+     * Builds the indexed text for a file: its name followed by its extracted content.
+     *
+     * @param file the file being indexed
+     * @param fileContent the file's extracted content; {@link #getFileContent} never returns
+     *            null, only {@link StringUtil#EMPTY} when extraction yields nothing
+     * @return the file name and content joined by a newline, without a trailing newline when
+     *         the content is blank
+     */
+    protected String getFileText(final File file, final String fileContent) {
+        return Stream.of(file.getName(), fileContent).filter(StringUtil::isNotBlank).collect(Collectors.joining("\n"));
     }
 
     /**
