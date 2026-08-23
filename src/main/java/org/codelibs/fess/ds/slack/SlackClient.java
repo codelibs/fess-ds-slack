@@ -642,7 +642,15 @@ public class SlackClient implements Closeable {
             final List<Message> messages = response.getMessages();
             for (int i = 1; i < messages.size(); i++) {
                 final Message message = messages.get(i);
-                if (message.isThreadBroadcast()) {
+                // Slack documents thread_broadcast as a message subtype, not as a boolean
+                // field: Message#isThreadBroadcast() is always false because the backing
+                // field is protected with no setter and Jackson's default field visibility
+                // is PUBLIC_ONLY, so none of the plausible payload shapes ever populate it.
+                // Without this guard actually firing, a broadcast reply is fetched here a
+                // second time -- once via conversations.history, once via this walk -- and
+                // only avoids being duplicated because both resolve the same permalink and
+                // the second store overwrites the first.
+                if ("thread_broadcast".equals(message.getSubtype())) {
                     continue;
                 }
                 consumer.accept(message);
