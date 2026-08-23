@@ -119,7 +119,17 @@ public class SlackDataStore extends AbstractDataStore {
     /** Parameter name for enabling file crawling. */
     protected static final String FILE_CRAWL = "file_crawl";
 
-    /** Parameter keys withheld from crawl scripts: credentials and proxy configuration. */
+    /**
+     * Parameter keys withheld from crawl scripts: credentials and proxy configuration.
+     *
+     * <p>
+     * This is a denylist over an otherwise-complete copy of the parameter map, not an
+     * allowlist: any new parameter is exposed to scripts by default. Whoever adds a new
+     * credential-shaped parameter (a token, a password, a secret key, ...) must add its key
+     * here, or it leaks into every script's data map the same way {@link SlackClient#TOKEN_PARAM}
+     * did before this set existed.
+     * </p>
+     */
     protected static final Set<String> SECRET_PARAMS =
             Set.of(SlackClient.TOKEN_PARAM, SlackClient.PROXY_HOST_PARAM, SlackClient.PROXY_PORT_PARAM);
 
