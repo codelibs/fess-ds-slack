@@ -101,9 +101,38 @@ public class SlackDataStoreFieldValueTest extends UnitDsTestCase {
         assertEquals("report.pdf\nCONTENT", dataStore.getFileText(file, "CONTENT"));
     }
 
+    /** The extracted sibling of {@code getFileText}: name and Slack-assigned title, space-joined. */
+    @Test
+    public void test_fileTitleJoinsNameAndTitle() {
+        final File file = fileNamedAndTitled("report.pdf", "Quarterly Report");
+        assertEquals("report.pdf Quarterly Report", dataStore.getFileTitle(file));
+    }
+
+    @Test
+    public void test_fileTitleWithoutTitleUsesNameOnly() {
+        final File file = fileNamed("report.pdf");
+        assertEquals("report.pdf", dataStore.getFileTitle(file));
+    }
+
+    @Test
+    public void test_fileTitleWithoutNameOrTitleIsEmpty() {
+        final File file = new FilesListRequest(null).parseResponse("{\"ok\":true,\"files\":[{\"id\":\"F1\"}]}", FilesListResponse.class)
+                .getFiles()
+                .get(0);
+        assertEquals("", dataStore.getFileTitle(file));
+    }
+
     private File fileNamed(final String name) {
         return new FilesListRequest(null)
                 .parseResponse("{\"ok\":true,\"files\":[{\"id\":\"F1\",\"name\":\"" + name + "\"}]}", FilesListResponse.class)
+                .getFiles()
+                .get(0);
+    }
+
+    private File fileNamedAndTitled(final String name, final String title) {
+        return new FilesListRequest(null)
+                .parseResponse("{\"ok\":true,\"files\":[{\"id\":\"F1\",\"name\":\"" + name + "\",\"title\":\"" + title + "\"}]}",
+                        FilesListResponse.class)
                 .getFiles()
                 .get(0);
     }

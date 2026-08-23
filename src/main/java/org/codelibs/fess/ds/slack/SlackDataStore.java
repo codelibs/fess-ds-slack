@@ -593,8 +593,7 @@ public class SlackDataStore extends AbstractDataStore {
             }
 
             final String fileContent = getFileContent(client, file, ignoreError);
-            fileMap.put(MESSAGE_TITLE,
-                    Stream.of(file.getName(), file.getTitle()).filter(StringUtil::isNotBlank).collect(Collectors.joining(" ")));
+            fileMap.put(MESSAGE_TITLE, getFileTitle(file));
             fileMap.put(MESSAGE_TEXT, getFileText(file, fileContent));
             // fileMap.put(MESSAGE_TEAM, team.getName());
             fileMap.put(MESSAGE_TIMESTAMP, getFileTimestamp(file));
@@ -823,6 +822,17 @@ public class SlackDataStore extends AbstractDataStore {
             }
         }
         return permalink;
+    }
+
+    /**
+     * Builds the indexed title for a file: its name and its Slack-assigned title, joined by a
+     * space and each skipped when blank.
+     *
+     * @param file the file being indexed
+     * @return the file name and title joined by a space
+     */
+    protected String getFileTitle(final File file) {
+        return Stream.of(file.getName(), file.getTitle()).filter(StringUtil::isNotBlank).collect(Collectors.joining(" "));
     }
 
     /**
