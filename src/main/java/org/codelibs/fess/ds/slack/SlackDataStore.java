@@ -118,6 +118,8 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String MAX_FILESIZE = "max_filesize";
     /** Parameter name for enabling file crawling. */
     protected static final String FILE_CRAWL = "file_crawl";
+    /** Regular expression pattern that matches any MIME type; the default of {@link #SUPPORTED_MIMETYPES}. */
+    protected static final String MATCH_ALL_MIMETYPES = ".*";
 
     /**
      * Parameter keys withheld from crawl scripts: credentials and proxy configuration.
@@ -241,8 +243,8 @@ public class SlackDataStore extends AbstractDataStore {
      * @return the list of supported MIME type patterns
      */
     protected List<String> getSupportedMimeTypes(final DataStoreParams paramMap) {
-        final String value = paramMap.getAsString(SUPPORTED_MIMETYPES, ".*");
-        final String effective = StringUtil.isNotBlank(value) ? value : ".*";
+        final String value = paramMap.getAsString(SUPPORTED_MIMETYPES, MATCH_ALL_MIMETYPES);
+        final String effective = StringUtil.isNotBlank(value) ? value : MATCH_ALL_MIMETYPES;
         return Arrays.stream(StringUtil.split(effective, ",")).map(String::trim).collect(Collectors.toList());
     }
 
@@ -268,6 +270,7 @@ public class SlackDataStore extends AbstractDataStore {
         try {
             urlFilter = ComponentUtil.getComponent(UrlFilter.class);
         } catch (final ComponentNotFoundException e) {
+            logger.warn("UrlFilter component is not registered; {} and {} will not be applied.", INCLUDE_PATTERN, EXCLUDE_PATTERN, e);
             return null;
         }
         final String include = paramMap.getAsString(INCLUDE_PATTERN);
