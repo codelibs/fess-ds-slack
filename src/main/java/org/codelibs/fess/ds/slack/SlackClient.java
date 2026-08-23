@@ -530,7 +530,16 @@ public class SlackClient implements Closeable {
             }
             response.getFiles().forEach(consumer);
             final FilesListResponse.Paging paging = response.getPaging();
-            if (paging == null || paging.getPages() == null || page >= paging.getPages().intValue()) {
+            if (paging == null || paging.getPages() == null) {
+                // Without paging info there is no way to know whether more pages remain, so
+                // stop here rather than loop forever. Files beyond this page are silently
+                // under-indexed; warn so that is visible instead of looking like a complete
+                // channel.
+                logger.warn("\"files.list\" response for channel {} on page {} carries no paging info; "
+                        + "any files beyond this page were not indexed.", channelId, page);
+                break;
+            }
+            if (page >= paging.getPages().intValue()) {
                 break;
             }
             page++;
