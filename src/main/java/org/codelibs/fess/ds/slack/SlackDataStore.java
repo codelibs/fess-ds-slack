@@ -310,12 +310,25 @@ public class SlackDataStore extends AbstractDataStore {
         client.getChannelMessages(channel.getId(), message -> {
             executorService.execute(() -> {
                 processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
-                if (message.getThreadTs() != null) {
+                if (isThreadParent(message)) {
                     processMessageReplies(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel,
                             message);
                 }
             });
         });
+    }
+
+    /**
+     * Returns whether the given message is the parent of a thread. Slack
+     * identifies a parent by its thread_ts being equal to its ts; a reply
+     * carries the parent's thread_ts and a different ts.
+     *
+     * @param message the message to test
+     * @return true if the message starts a thread
+     */
+    protected boolean isThreadParent(final Message message) {
+        final String threadTs = message.getThreadTs();
+        return threadTs != null && threadTs.equals(message.getTs());
     }
 
     /**
