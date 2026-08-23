@@ -44,7 +44,7 @@ public class ChatGetPermalinkRequest extends Request<ChatGetPermalinkResponse> {
 
     @Override
     public ChatGetPermalinkResponse execute() {
-        return parseResponse(request().execute().getContentAsString(), ChatGetPermalinkResponse.class);
+        return execute(request(), ChatGetPermalinkResponse.class);
     }
 
     private CurlRequest request() {

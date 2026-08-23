@@ -57,7 +57,7 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
      */
     @Override
     public ConversationsHistoryResponse execute() {
-        return parseResponse(request().execute().getContentAsString(), ConversationsHistoryResponse.class);
+        return execute(request(), ConversationsHistoryResponse.class);
     }
 
     /**

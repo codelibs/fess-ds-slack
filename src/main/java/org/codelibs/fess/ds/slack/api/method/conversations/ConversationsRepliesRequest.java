@@ -66,7 +66,7 @@ public class ConversationsRepliesRequest extends Request<ConversationsRepliesRes
      */
     @Override
     public ConversationsRepliesResponse execute() {
-        return parseResponse(request().execute().getContentAsString(), ConversationsRepliesResponse.class);
+        return execute(request(), ConversationsRepliesResponse.class);
     }
 
     /**

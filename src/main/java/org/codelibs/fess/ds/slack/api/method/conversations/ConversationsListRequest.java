@@ -52,7 +52,7 @@ public class ConversationsListRequest extends Request<ConversationsListResponse>
      */
     @Override
     public ConversationsListResponse execute() {
-        return parseResponse(request().execute().getContentAsString(), ConversationsListResponse.class);
+        return execute(request(), ConversationsListResponse.class);
     }
 
     /**

@@ -49,7 +49,7 @@ public class ConversationsInfoRequest extends Request<ConversationsInfoResponse>
      */
     @Override
     public ConversationsInfoResponse execute() {
-        return parseResponse(request().execute().getContentAsString(), ConversationsInfoResponse.class);
+        return execute(request(), ConversationsInfoResponse.class);
     }
 
     /**

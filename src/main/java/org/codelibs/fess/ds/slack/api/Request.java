@@ -21,6 +21,7 @@ import java.util.function.Function;
 
 import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.ds.slack.SlackDataStoreException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -117,6 +118,30 @@ public abstract class Request<T extends Response> {
             return mapper.readValue(content, valueType).responseBody(content);
         } catch (final IOException e) {
             throw new SlackDataStoreException("Failed to parse: \"" + content + "\"", e);
+        }
+    }
+
+    /**
+     * Executes the given request, parses the JSON body into this request's
+     * response type and always releases the underlying connection.
+     *
+     * <p>
+     * This is the single place a subclass calls to run its prepared request,
+     * so it is also the single place a future retry layer needs to change to
+     * read {@link CurlResponse#getHttpStatusCode()} or a
+     * {@code Retry-After} header before the response is parsed and closed.
+     * </p>
+     *
+     * @param request the prepared request
+     * @param valueType the response class
+     * @return the parsed response
+     * @throws SlackDataStoreException if closing the response fails
+     */
+    protected T execute(final CurlRequest request, final Class<T> valueType) {
+        try (final CurlResponse response = request.execute()) {
+            return parseResponse(response.getContentAsString(), valueType);
+        } catch (final IOException e) {
+            throw new SlackDataStoreException("Failed to close the response.", e);
         }
     }
 

@@ -42,7 +42,7 @@ public class UsersInfoRequest extends Request<UsersInfoResponse> {
 
     @Override
     public UsersInfoResponse execute() {
-        return parseResponse(request().execute().getContentAsString(), UsersInfoResponse.class);
+        return execute(request(), UsersInfoResponse.class);
     }
 
     /**

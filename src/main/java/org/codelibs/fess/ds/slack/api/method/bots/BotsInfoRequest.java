@@ -38,7 +38,7 @@ public class BotsInfoRequest extends Request<BotsInfoResponse> {
 
     @Override
     public BotsInfoResponse execute() {
-        return parseResponse(request().execute().getContentAsString(), BotsInfoResponse.class);
+        return execute(request(), BotsInfoResponse.class);
     }
 
     /**
