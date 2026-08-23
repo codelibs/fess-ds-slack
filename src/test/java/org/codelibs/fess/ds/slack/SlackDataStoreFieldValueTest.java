@@ -122,6 +122,26 @@ public class SlackDataStoreFieldValueTest extends UnitDsTestCase {
         assertEquals("", dataStore.getFileTitle(file));
     }
 
+    /** A `ts` that parses normally must still work after the null guard was added. */
+    @Test
+    public void test_messageTimestampParsesTs() {
+        final Message message = firstMessage("{\"ok\":true,\"messages\":[{\"ts\":\"1531763254.000100\"}]}");
+        assertEquals(1531763254000L, dataStore.getMessageTimestamp(message).getTime());
+    }
+
+    /**
+     * A message can reach here with no `ts` at all: {@link SlackDataStore#getMessagePermalink}
+     * returns an already-set permalink without requiring `ts`, so a message with a permalink but
+     * no `ts` survives that guard. Before this fix, {@code Double.parseDouble(null)} here threw
+     * an NPE that landed the message in the failure records under an empty URL instead of
+     * either indexing it or failing legibly.
+     */
+    @Test
+    public void test_messageTimestampWithoutTsReturnsNull() {
+        final Message message = firstMessage("{\"ok\":true,\"messages\":[{\"text\":\"TEXT\"}]}");
+        assertNull("no ts field", dataStore.getMessageTimestamp(message));
+    }
+
     private File fileNamed(final String name) {
         return new FilesListRequest(null)
                 .parseResponse("{\"ok\":true,\"files\":[{\"id\":\"F1\",\"name\":\"" + name + "\"}]}", FilesListResponse.class)

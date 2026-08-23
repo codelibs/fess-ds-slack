@@ -674,11 +674,24 @@ public class SlackDataStore extends AbstractDataStore {
     /**
      * Converts a message timestamp to a Date object.
      *
+     * <p>
+     * A message with no {@code ts} can still reach here with a non-empty permalink -- see
+     * {@link #getMessagePermalink} -- so this must not assume {@code ts} is present. Mirrors
+     * {@link #getFileTimestamp}, which returns {@code null} rather than throwing when a file
+     * carries neither {@code created} nor {@code timestamp}: the message still indexes, just
+     * without a timestamp, instead of failing with an unhelpful {@link NullPointerException}
+     * recorded under an empty URL.
+     * </p>
+     *
      * @param message the message containing the timestamp
-     * @return the timestamp as a Date object
+     * @return the timestamp as a Date object, or {@code null} if the message carries no {@code ts}
      */
     protected Date getMessageTimestamp(final Message message) {
-        return new Date(Math.round(Double.parseDouble(message.getTs()) * 1000));
+        final String ts = message.getTs();
+        if (ts == null) {
+            return null;
+        }
+        return new Date(Math.round(Double.parseDouble(ts) * 1000));
     }
 
     /**
