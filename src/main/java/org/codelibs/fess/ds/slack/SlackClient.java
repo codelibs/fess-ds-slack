@@ -16,6 +16,7 @@
 package org.codelibs.fess.ds.slack;
 
 import java.io.Closeable;
+import java.net.Proxy;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
@@ -24,6 +25,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.codelibs.core.lang.StringUtil;
 import org.codelibs.curl.Curl;
+import org.codelibs.curl.CurlRequest;
 import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.Constants;
 import org.codelibs.fess.ds.slack.api.Authentication;
@@ -427,14 +429,24 @@ public class SlackClient implements Closeable {
     /**
      * Downloads a file from Slack using authenticated HTTP request.
      *
+     * <p>
+     * Honours the configured HTTP proxy, matching the API request path in
+     * {@link org.codelibs.fess.ds.slack.api.Request#getCurlRequest}: without
+     * it, every download attempted a direct connection in a proxied
+     * environment and failed, and with {@code ignore_error} defaulting to
+     * true the file was indexed with empty content instead.
+     * </p>
+     *
      * @param fileUrl the URL of the file to download
      * @return the HTTP response containing the file content
      */
     public CurlResponse getFileResponse(final String fileUrl) {
-        return Curl.get(fileUrl)
-                .header("Authorization", "Bearer " + getToken(paramMap))
-                .header("Content-type", "application/x-www-form-urlencoded ")
-                .execute();
+        final CurlRequest request = Curl.get(fileUrl).header("Authorization", "Bearer " + getToken(paramMap));
+        final Proxy httpProxy = authentication.getHttpProxy();
+        if (httpProxy != null) {
+            request.proxy(httpProxy);
+        }
+        return request.execute();
     }
 
     /**

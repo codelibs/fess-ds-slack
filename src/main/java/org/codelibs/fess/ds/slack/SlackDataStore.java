@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -117,6 +118,10 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String MAX_FILESIZE = "max_filesize";
     /** Parameter name for enabling file crawling. */
     protected static final String FILE_CRAWL = "file_crawl";
+
+    /** Parameter keys withheld from crawl scripts: credentials and proxy configuration. */
+    protected static final Set<String> SECRET_PARAMS =
+            Set.of(SlackClient.TOKEN_PARAM, SlackClient.PROXY_HOST_PARAM, SlackClient.PROXY_PORT_PARAM);
 
     // scripts
     /** Script field name for message data. */
@@ -361,6 +366,31 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Builds the map exposed to crawl scripts, withholding credentials and
+     * network configuration.
+     *
+     * <p>
+     * {@link AbstractDataStore#convertValue} returns a value verbatim when a
+     * script template matches a parameter key exactly, so a copy of the raw
+     * parameter map would let a script such as {@code content=token} index
+     * the OAuth token. The keys in {@link #SECRET_PARAMS} are withheld
+     * instead of copied.
+     * </p>
+     *
+     * @param paramMap the data store parameters
+     * @return a new map safe to expose to scripts
+     */
+    protected Map<String, Object> newResultMap(final DataStoreParams paramMap) {
+        final Map<String, Object> resultMap = new LinkedHashMap<>();
+        paramMap.asMap().forEach((k, v) -> {
+            if (!SECRET_PARAMS.contains(k)) {
+                resultMap.put(k, v);
+            }
+        });
+        return resultMap;
+    }
+
+    /**
      * Processes a single message for indexing, extracting content and metadata.
      *
      * @param dataConfig the data configuration
@@ -409,7 +439,7 @@ public class SlackDataStore extends AbstractDataStore {
 
             logger.info("Crawling URL: {}", url);
 
-            final Map<String, Object> resultMap = new LinkedHashMap<>(paramMap.asMap());
+            final Map<String, Object> resultMap = newResultMap(paramMap);
             final Map<String, Object> messageMap = new HashMap<>();
 
             final String messageText = getMessageText(message);
@@ -521,7 +551,7 @@ public class SlackDataStore extends AbstractDataStore {
 
             final boolean ignoreError = (Boolean) configMap.get(IGNORE_ERROR);
 
-            final Map<String, Object> resultMap = new LinkedHashMap<>(paramMap.asMap());
+            final Map<String, Object> resultMap = newResultMap(paramMap);
             final Map<String, Object> fileMap = new HashMap<>();
 
             final long maxFilesize = (Long) configMap.get(MAX_FILESIZE);

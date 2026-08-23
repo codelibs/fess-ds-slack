@@ -19,6 +19,8 @@ import java.io.IOException;
 import java.net.Proxy;
 import java.util.function.Function;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.curl.CurlResponse;
@@ -34,6 +36,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * @param <T> the response type that this request will return
  */
 public abstract class Request<T extends Response> {
+
+    private static final Logger logger = LogManager.getLogger(Request.class);
 
     /** Function for creating GET HTTP requests */
     public static final Function<String, CurlRequest> GET = Curl::get;
@@ -108,6 +112,14 @@ public abstract class Request<T extends Response> {
     /**
      * Parses the raw JSON response content into the specified response type.
      *
+     * <p>
+     * The response body is not included in the exception message: an invalid
+     * token can make Slack answer with an HTML error page, and any response
+     * body may carry PII, so embedding it verbatim would let it reach the
+     * log at whatever level the caller logs the exception. The body is
+     * logged separately, at debug level only.
+     * </p>
+     *
      * @param content the raw JSON response content from the API
      * @param valueType the class type to parse the response into
      * @return the parsed response object
@@ -117,7 +129,11 @@ public abstract class Request<T extends Response> {
         try {
             return mapper.readValue(content, valueType).responseBody(content);
         } catch (final IOException e) {
-            throw new SlackDataStoreException("Failed to parse: \"" + content + "\"", e);
+            if (logger.isDebugEnabled()) {
+                logger.debug("Unparseable Slack API response: {}", content);
+            }
+            throw new SlackDataStoreException(
+                    "Failed to parse a Slack API response of " + (content == null ? 0 : content.length()) + " characters.", e);
         }
     }
 
