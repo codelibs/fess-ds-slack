@@ -102,4 +102,21 @@ public class SlackClientChannelsTest extends UnitDsTestCase {
         assertEquals(1, channels.size());
         assertEquals("general", channels.get(0).getName());
     }
+
+    /** `channels=*all` must not walk conversations.list twice. */
+    @Test
+    public void test_allChannelsFetchesConversationsListOnce() {
+        server.enqueue("/api/conversations.list", SlackApiMockServer
+                .json("{\"ok\":true,\"channels\":[{\"id\":\"C1\",\"name\":\"general\"}],\"response_metadata\":{\"next_cursor\":\"\"}}"));
+
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-test");
+        paramMap.put("channels", "*all");
+
+        final List<Channel> channels = new ArrayList<>();
+        server.newClient(paramMap).getChannels(channels::add);
+
+        assertEquals(1, channels.size());
+        assertEquals(1, server.getRequestCount("/api/conversations.list"));
+    }
 }
