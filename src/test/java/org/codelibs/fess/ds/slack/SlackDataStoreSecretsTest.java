@@ -15,6 +15,8 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import java.util.Map;
+
 import org.codelibs.fess.entity.DataStoreParams;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
@@ -38,7 +40,7 @@ public class SlackDataStoreSecretsTest extends UnitDsTestCase {
         paramMap.put("proxy_port", "8080");
         paramMap.put("channels", "general");
 
-        final java.util.Map<String, Object> resultMap = dataStore.newResultMap(paramMap);
+        final Map<String, Object> resultMap = dataStore.newResultMap(paramMap);
 
         assertNull("token must not be exposed to scripts", resultMap.get("token"));
         assertNull("proxy_host must not be exposed to scripts", resultMap.get("proxy_host"));

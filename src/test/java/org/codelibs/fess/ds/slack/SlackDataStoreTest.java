@@ -15,9 +15,13 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 
+import org.codelibs.fess.crawler.filter.UrlFilter;
 import org.codelibs.fess.entity.DataStoreParams;
 import org.codelibs.fess.util.ComponentUtil;
 import org.codelibs.fess.ds.slack.UnitDsTestCase;
@@ -124,7 +128,7 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     @Test
     public void test_getSupportedMimeTypes_defaultValue() {
         final DataStoreParams paramMap = new DataStoreParams();
-        final java.util.List<String> mimeTypes = dataStore.getSupportedMimeTypes(paramMap);
+        final List<String> mimeTypes = dataStore.getSupportedMimeTypes(paramMap);
         assertEquals(1, mimeTypes.size());
         assertEquals(".*", mimeTypes.get(0));
     }
@@ -133,7 +137,7 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     public void test_getSupportedMimeTypes_blankFallsBackToDefault() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("supported_mimetypes", "");
-        final java.util.List<String> mimeTypes = dataStore.getSupportedMimeTypes(paramMap);
+        final List<String> mimeTypes = dataStore.getSupportedMimeTypes(paramMap);
         assertEquals(1, mimeTypes.size());
         assertEquals(".*", mimeTypes.get(0));
     }
@@ -142,7 +146,7 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     public void test_getSupportedMimeTypes_explicitValue() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("supported_mimetypes", "application/pdf,text/plain");
-        final java.util.List<String> mimeTypes = dataStore.getSupportedMimeTypes(paramMap);
+        final List<String> mimeTypes = dataStore.getSupportedMimeTypes(paramMap);
         assertEquals(2, mimeTypes.size());
         assertEquals("application/pdf", mimeTypes.get(0));
         assertEquals("text/plain", mimeTypes.get(1));
@@ -166,7 +170,7 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     // Test thread pool creation
     @Test
     public void test_newFixedThreadPool() {
-        final java.util.concurrent.ExecutorService executorService = dataStore.newFixedThreadPool(2);
+        final ExecutorService executorService = dataStore.newFixedThreadPool(2);
         assertNotNull(executorService);
         executorService.shutdown();
     }
@@ -174,14 +178,14 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     // Test newFixedThreadPool with different thread counts
     @Test
     public void test_newFixedThreadPool_singleThread() {
-        final java.util.concurrent.ExecutorService executorService = dataStore.newFixedThreadPool(1);
+        final ExecutorService executorService = dataStore.newFixedThreadPool(1);
         assertNotNull(executorService);
         executorService.shutdown();
     }
 
     @Test
     public void test_newFixedThreadPool_multipleThreads() {
-        final java.util.concurrent.ExecutorService executorService = dataStore.newFixedThreadPool(5);
+        final ExecutorService executorService = dataStore.newFixedThreadPool(5);
         assertNotNull(executorService);
         executorService.shutdown();
     }
@@ -193,7 +197,7 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     @Test
     public void test_getUrlFilter_missingComponentReturnsNull() {
         final DataStoreParams paramMap = new DataStoreParams();
-        final org.codelibs.fess.crawler.filter.UrlFilter urlFilter = dataStore.getUrlFilter(paramMap);
+        final UrlFilter urlFilter = dataStore.getUrlFilter(paramMap);
         assertNull(urlFilter);
     }
 
