@@ -141,7 +141,13 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final int DEFAULT_EXECUTOR_TIMEOUT = 60;
     /** Parameter name for excluding Slack-generated channel-administration messages. */
     protected static final String IGNORE_SYSTEM_EVENTS = "ignore_system_events";
-    /** Parameter name for the delay, in milliseconds, to sleep after each processed message/file. */
+    /**
+     * Parameter name for the delay, in milliseconds, to sleep after each processed message/file.
+     * Read by the inherited {@link AbstractDataStore#getReadInterval}, not by a method in this
+     * class: that method's own key, {@code "readInterval"}, and this one are the same key to
+     * {@link org.codelibs.fess.entity.ParamMap} -- its lookup falls back to the other case
+     * convention on a miss -- so no override is needed here.
+     */
     protected static final String READ_INTERVAL = "read_interval";
 
     /**
@@ -434,37 +440,6 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
-     * Extracts, in milliseconds, how long {@link #processChannelMessages} and
-     * {@link #processChannelFiles} should {@link #sleep} after each processed message or file,
-     * to pace a crawl against a rate-limited workspace.
-     *
-     * <p>
-     * Overrides {@link AbstractDataStore#getReadInterval}, which reads the hardcoded key {@code
-     * "readInterval"} -- camelCase, unlike every other parameter this plugin defines ({@code
-     * token}, {@code include_private}, {@code connection_timeout}, {@code exclude_archived},
-     * ...). Reading that key as-is would silently accept a parameter name this plugin's own
-     * naming convention, and the design this parameter shipped under, never document, so this
-     * reads {@link #READ_INTERVAL} instead. {@link #sleep} itself is not overridden.
-     * </p>
-     *
-     * @param paramMap the configuration parameters
-     * @return the interval in milliseconds, or 0 if unset or not a number
-     */
-    @Override
-    protected long getReadInterval(final DataStoreParams paramMap) {
-        final String value = paramMap.getAsString(READ_INTERVAL);
-        if (StringUtil.isBlank(value)) {
-            return 0L;
-        }
-        try {
-            return Long.parseLong(value);
-        } catch (final NumberFormatException e) {
-            logger.warn("Parameter '{}' is not a number: {}. Falling back to 0.", READ_INTERVAL, value);
-            return 0L;
-        }
-    }
-
-    /**
      * Creates and configures a URL filter based on include/exclude patterns.
      *
      * @param paramMap the configuration parameters
@@ -513,11 +488,14 @@ public class SlackDataStore extends AbstractDataStore {
      *
      * <p>
      * A message {@link #isSystemEventMessage} recognizes is dropped here, before it is even
-     * dispatched to {@code executorService}, when {@link #isIgnoreSystemEvents} is on: it is
-     * never threadable (see {@code SlackClient#handleApiError}'s {@code thread_not_found}
-     * handling), so skipping it here also avoids a wasted {@code chat.getPermalink} call that
-     * {@link #processMessage} would otherwise make to resolve its URL. A dropped message does
-     * not count toward {@code read_interval} pacing below, since nothing was dispatched for it.
+     * dispatched to {@code executorService}, when {@link #isIgnoreSystemEvents} is on. Dropping
+     * it here also skips the {@link #isThreadParent} check below, so any replies it has are
+     * never fetched either -- see the assumption recorded at the drop site about why that is
+     * believed safe for all of {@link #SYSTEM_EVENT_SUBTYPES}, not just the two the design spec
+     * documents. Skipping a system-event message here also avoids a wasted {@code
+     * chat.getPermalink} call that {@link #processMessage} would otherwise make to resolve its
+     * URL. A dropped message does not count toward {@code read_interval} pacing below, since
+     * nothing was dispatched for it.
      * </p>
      *
      * <p>
@@ -546,6 +524,16 @@ public class SlackDataStore extends AbstractDataStore {
         final long readInterval = (Long) configMap.get(READ_INTERVAL);
         client.getChannelMessages(channel.getId(), message -> {
             if (ignoreSystemEvents && isSystemEventMessage(message)) {
+                // Dropping here also means isThreadParent(message)/processMessageReplies never
+                // run for this message, so any replies it has would be silently lost if it had
+                // any. Design spec F11 documents this as safe for channel_join/channel_leave
+                // specifically -- conversations.replies on their ts returns thread_not_found,
+                // i.e. Slack itself refuses to thread them -- but does not say so for the other
+                // fourteen subtypes in SYSTEM_EVENT_SUBTYPES (channel_topic, pinned_item, ...).
+                // Extending that guarantee to all of them is an assumption, not a verified fact:
+                // they are Slack-generated channel-administration notices, so a reply thread on
+                // one is not a scenario Slack's own UI offers, but this has not been confirmed
+                // against a live workspace.
                 if (logger.isDebugEnabled()) {
                     logger.debug("Skipping system event message (subtype={}) in channel {}", message.getSubtype(), channel.getId());
                 }
