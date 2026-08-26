@@ -87,6 +87,8 @@ public class SlackClient implements Closeable {
     protected static final String TOKEN_PARAM = "token";
     /** Parameter name for including private channels. */
     protected static final String INCLUDE_PRIVATE_PARAM = "include_private";
+    /** Parameter name for excluding archived channels from {@code conversations.list}. */
+    protected static final String EXCLUDE_ARCHIVED_PARAM = "exclude_archived";
     /** Parameter name for specifying channels to crawl. */
     protected static final String CHANNELS_PARAM = "channels";
     /** Special value to indicate all channels should be crawled. */
@@ -169,6 +171,8 @@ public class SlackClient implements Closeable {
 
     /** Whether to include private channels in operations. */
     protected final Boolean includePrivate;
+    /** Whether {@code conversations.list} should exclude archived channels. */
+    protected final Boolean excludeArchived;
     /** Request context for Slack API access. */
     protected final RequestContext requestContext;
     /** Configuration parameters for the data store. */
@@ -228,6 +232,7 @@ public class SlackClient implements Closeable {
 
         this.paramMap = paramMap;
         includePrivate = isIncludePrivate(paramMap);
+        excludeArchived = isExcludeArchived(paramMap);
 
         requestContext = new RequestContext(token);
 
@@ -424,6 +429,21 @@ public class SlackClient implements Closeable {
      */
     protected Boolean isIncludePrivate(final DataStoreParams paramMap) {
         return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(INCLUDE_PRIVATE_PARAM, Constants.FALSE));
+    }
+
+    /**
+     * Determines whether {@code conversations.list} should exclude archived channels.
+     *
+     * <p>
+     * Defaults to {@code false} -- Slack's own default -- so an unset parameter leaves current
+     * behaviour (archived channels included) unchanged.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return true if archived channels should be excluded, false otherwise
+     */
+    protected Boolean isExcludeArchived(final DataStoreParams paramMap) {
+        return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(EXCLUDE_ARCHIVED_PARAM, Constants.FALSE));
     }
 
     /**
@@ -848,7 +868,7 @@ public class SlackClient implements Closeable {
      * @param consumer the function to process each channel
      */
     public void getAllChannels(final Integer limit, final Consumer<Channel> consumer) {
-        ConversationsListResponse response = conversationsList().types(getTypes()).limit(limit).execute();
+        ConversationsListResponse response = conversationsList().types(getTypes()).excludeArchived(excludeArchived).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
                 handleApiError("conversations.list", response);
@@ -862,7 +882,7 @@ public class SlackClient implements Closeable {
             if (nextCursor.isEmpty()) {
                 break;
             }
-            response = conversationsList().types(getTypes()).limit(limit).cursor(nextCursor).execute();
+            response = conversationsList().types(getTypes()).excludeArchived(excludeArchived).limit(limit).cursor(nextCursor).execute();
         }
     }
 
