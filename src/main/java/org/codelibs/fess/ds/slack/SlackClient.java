@@ -221,6 +221,15 @@ public class SlackClient implements Closeable {
      * UI (which flips {@link org.codelibs.fess.ds.AbstractDataStore#alive} to {@code false})
      * takes effect at the next page boundary instead of only after every page of every channel
      * has been walked.
+     *
+     * <p>
+     * <b>Not consulted while a request is retrying</b>: {@link org.codelibs.fess.ds.slack.api.Request#sleepBeforeRetry}
+     * has no reference to this supplier, so a stop landing mid-backoff is delayed until that
+     * retry sequence finishes -- bounded by {@code max_retry_count} times {@code
+     * Request.MAX_RETRY_WAIT_MILLIS} -- not until the next page boundary. See that method's
+     * javadoc for why this is a documented bound rather than plumbing this supplier down into
+     * {@code Request}.
+     * </p>
      */
     protected final BooleanSupplier aliveSupplier;
 
@@ -1009,14 +1018,16 @@ public class SlackClient implements Closeable {
             final List<Message> messages = response.getMessages();
             for (int i = 1; i < messages.size(); i++) {
                 final Message message = messages.get(i);
-                // Slack documents thread_broadcast as a message subtype, not as a boolean
-                // field: Message#isThreadBroadcast() is always false because the backing
-                // field is protected with no setter and Jackson's default field visibility
-                // is PUBLIC_ONLY, so none of the plausible payload shapes ever populate it.
-                // Without this guard actually firing, a broadcast reply is fetched here a
-                // second time -- once via conversations.history, once via this walk -- and
-                // only avoids being duplicated because both resolve the same permalink and
-                // the second store overwrites the first.
+                // Slack documents thread_broadcast as a message subtype, checked here via
+                // Message#getSubtype() -- not as a boolean field. An earlier revision of this
+                // class relied on a since-deleted Message#isThreadBroadcast() that was always
+                // false (the backing field was protected with no setter, and Jackson's default
+                // field visibility is PUBLIC_ONLY, so no plausible payload shape ever populated
+                // it); this subtype check is what replaced it. Without this guard actually
+                // firing, a broadcast reply is fetched here a second time -- once via
+                // conversations.history, once via this walk -- and only avoids being duplicated
+                // because both resolve the same permalink and the second store overwrites the
+                // first.
                 if ("thread_broadcast".equals(message.getSubtype())) {
                     continue;
                 }

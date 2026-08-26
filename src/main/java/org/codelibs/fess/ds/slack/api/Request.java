@@ -239,6 +239,19 @@ public abstract class Request<T extends Response> {
      * Waits before retrying a request and logs the retry so a slower crawl
      * has a visible cause instead of an unexplained one.
      *
+     * <p>
+     * <b>Deliberately does not consult {@code SlackClient}'s {@code aliveSupplier}.</b> This
+     * class has no reference to it -- {@code aliveSupplier} is plumbed through {@code
+     * SlackClient}'s paging loops, which check it once per page, not once per request -- so an
+     * operator stopping a crawl mid-backoff has to wait out the sleep already in progress before
+     * the next page-boundary check can take effect. Bounded: the longest a single page fetch can
+     * now take is {@code max_retry_count} attempts times {@link #MAX_RETRY_WAIT_MILLIS}, so a
+     * stop is delayed by at most that much, not indefinitely. Documented here rather than
+     * threading {@code aliveSupplier} down into this class, which would mean either giving every
+     * {@link Request} subclass a dependency it does not otherwise need or special-casing this one
+     * retry path -- more machinery than a bounded delay justifies.
+     * </p>
+     *
      * @param response the response that triggered the retry
      * @param attempt the 1-based retry attempt number, for logging
      * @param status the HTTP status code that triggered the retry, for logging
@@ -264,18 +277,33 @@ public abstract class Request<T extends Response> {
      * date, which is not a number of seconds; a non-numeric value falls back
      * to an exponential backoff from
      * {@link RequestContext#getRetryInterval()} rather than failing the
-     * request.
+     * request. A negative value is treated the same way: RFC 9110 defines
+     * {@code Retry-After} as a non-negative delay, and letting a negative
+     * (or, after multiplying by 1000, overflowed) value through would reach
+     * {@code Thread.sleep} and throw {@link IllegalArgumentException},
+     * killing the crawl instead of falling back cleanly. A very large
+     * positive value is not treated this way -- it is clamped to
+     * {@link #MAX_RETRY_WAIT_MILLIS} below without overflowing, since Slack
+     * can legitimately ask for a wait longer than this class's cap.
      * </p>
      *
      * @param response the response that triggered the retry
      * @param attempt the 1-based retry attempt number
-     * @return the wait in milliseconds, not yet capped
+     * @return the wait in milliseconds, not yet capped for the non-header (backoff) case, but
+     *         already capped at {@link #MAX_RETRY_WAIT_MILLIS} for a numeric, non-negative header
      */
     protected long getRetryWaitMillis(final CurlResponse response, final int attempt) {
         final String retryAfter = response.getHeaderValue(RETRY_AFTER_HEADER);
         if (retryAfter != null) {
             try {
-                return Long.parseLong(retryAfter.trim()) * 1000L;
+                final long seconds = Long.parseLong(retryAfter.trim());
+                if (seconds >= 0) {
+                    // Comparing before multiplying avoids the overflow a huge header value would
+                    // otherwise cause; MAX_RETRY_WAIT_MILLIS / 1000 seconds is exactly the point
+                    // past which the multiplication would only be clamped back down anyway.
+                    return seconds <= MAX_RETRY_WAIT_MILLIS / 1000L ? seconds * 1000L : MAX_RETRY_WAIT_MILLIS;
+                }
+                // A negative Retry-After is invalid; fall back to the backoff below.
             } catch (final NumberFormatException e) {
                 // Not a number of seconds (e.g. an RFC 1123 date); fall back to the backoff below.
             }

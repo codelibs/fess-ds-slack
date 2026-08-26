@@ -148,8 +148,20 @@ public class SlackApiMockServer implements AutoCloseable {
      * @return the response
      */
     public static MockResponse rateLimited(final int retryAfterSeconds) {
+        return rateLimited(Integer.toString(retryAfterSeconds));
+    }
+
+    /**
+     * Builds an HTTP 429 response carrying a Retry-After header with an arbitrary raw value,
+     * for exercising a malformed header (e.g. negative, or too large to fit an {@code int})
+     * that {@link #rateLimited(int)} cannot express.
+     *
+     * @param retryAfterHeaderValue the raw value of the Retry-After header
+     * @return the response
+     */
+    public static MockResponse rateLimited(final String retryAfterHeaderValue) {
         final Map<String, String> headers = new HashMap<>();
-        headers.put("Retry-After", Integer.toString(retryAfterSeconds));
+        headers.put("Retry-After", retryAfterHeaderValue);
         return new MockResponse(429, "{\"ok\":false,\"error\":\"ratelimited\"}", headers);
     }
 

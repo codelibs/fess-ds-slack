@@ -15,8 +15,12 @@
  */
 package org.codelibs.fess.ds.slack.api;
 
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.ds.slack.SlackApiMockServer;
 import org.codelibs.fess.ds.slack.UnitDsTestCase;
+import org.codelibs.fess.ds.slack.api.method.team.TeamInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.team.TeamInfoResponse;
 import org.codelibs.fess.entity.DataStoreParams;
 import org.junit.jupiter.api.Test;
@@ -135,5 +139,53 @@ public class RequestRetryTest extends UnitDsTestCase {
         paramMap.put("token", "xoxb-test");
         final TeamInfoResponse response = server.newClient(paramMap).teamInfo().execute();
         assertFalse(response.retriesExhausted());
+    }
+
+    /**
+     * Covers the Retry-After overflow/negative guard: a negative value must fall back to the
+     * exponential backoff, not reach {@code Thread.sleep} negative and throw.
+     */
+    @Test
+    public void test_negativeRetryAfter_fallsBackToBackoffInsteadOfThrowing() {
+        server.enqueue("/api/team.info", SlackApiMockServer.rateLimited("-5"));
+        server.enqueue("/api/team.info", SlackApiMockServer.json("{\"ok\":true,\"team\":{\"id\":\"T1\"}}"));
+
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-test");
+        paramMap.put("retry_interval", "5");
+        final TeamInfoResponse response = server.newClient(paramMap).teamInfo().execute();
+
+        assertTrue("must fall back to the backoff and eventually succeed, not throw", response.ok());
+        assertEquals(2, server.getRequestCount("/api/team.info"));
+    }
+
+    /**
+     * Covers the Retry-After overflow guard: a value large enough to overflow when multiplied by
+     * 1000 must clamp to {@code MAX_RETRY_WAIT_MILLIS}, not wrap around into a negative wait.
+     * Overrides {@code sleepBeforeRetry} to capture the computed wait without actually sleeping
+     * for a full minute -- this test is about the arithmetic, not the delay itself.
+     */
+    @Test
+    public void test_hugeRetryAfter_clampsInsteadOfOverflowing() {
+        server.enqueue("/api/team.info", SlackApiMockServer.rateLimited(Long.toString(Long.MAX_VALUE / 500)));
+        server.enqueue("/api/team.info", SlackApiMockServer.json("{\"ok\":true,\"team\":{\"id\":\"T1\"}}"));
+
+        final RequestContext requestContext = new RequestContext("xoxb-test");
+        requestContext.setRetry(1, 10L);
+        final AtomicLong capturedWaitMillis = new AtomicLong(-1L);
+        final TeamInfoRequest request = new TeamInfoRequest(requestContext) {
+            @Override
+            protected void sleepBeforeRetry(final CurlResponse response, final int attempt, final int status) {
+                capturedWaitMillis.set(Math.min(getRetryWaitMillis(response, attempt), MAX_RETRY_WAIT_MILLIS));
+                // Deliberately does not call Thread.sleep: this test only needs the computed
+                // wait, not to actually wait out MAX_RETRY_WAIT_MILLIS.
+            }
+        };
+
+        final TeamInfoResponse response = request.execute();
+
+        assertTrue("must succeed after the (skipped) retry", response.ok());
+        assertEquals("a header value that overflows when multiplied by 1000 must clamp to the cap, not wrap negative",
+                Request.MAX_RETRY_WAIT_MILLIS, capturedWaitMillis.get());
     }
 }
