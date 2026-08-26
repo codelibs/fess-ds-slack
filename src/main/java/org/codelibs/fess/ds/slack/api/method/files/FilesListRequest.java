@@ -16,7 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.files;
 
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Request;
 
 /**
@@ -49,10 +49,10 @@ public class FilesListRequest extends Request<FilesListResponse> {
     /**
      * Constructs a new files.list request.
      *
-     * @param authentication the authentication credentials
+     * @param requestContext the request context
      */
-    public FilesListRequest(final Authentication authentication) {
-        super(authentication);
+    public FilesListRequest(final RequestContext requestContext) {
+        super(requestContext);
     }
 
     /**

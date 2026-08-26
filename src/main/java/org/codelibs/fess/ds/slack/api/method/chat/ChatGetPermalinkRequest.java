@@ -16,7 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.chat;
 
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Request;
 
 /**
@@ -32,12 +32,12 @@ public class ChatGetPermalinkRequest extends Request<ChatGetPermalinkResponse> {
     /**
      * Creates a new chat.getPermalink request.
      *
-     * @param authentication the authentication credentials
+     * @param requestContext the request context
      * @param channel the channel ID
      * @param ts the message timestamp
      */
-    public ChatGetPermalinkRequest(final Authentication authentication, final String channel, final String ts) {
-        super(authentication);
+    public ChatGetPermalinkRequest(final RequestContext requestContext, final String channel, final String ts) {
+        super(requestContext);
         this.channel = channel;
         this.ts = ts;
     }

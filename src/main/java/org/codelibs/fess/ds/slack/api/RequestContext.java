@@ -19,22 +19,25 @@ import java.net.InetSocketAddress;
 import java.net.Proxy;
 
 /**
- * Handles authentication for Slack API requests including OAuth tokens and proxy configuration.
+ * Holds the per-client request configuration for Slack API calls: OAuth
+ * credentials, proxy settings, and (in later revisions) connection and
+ * retry behaviour. It carries more than authentication, so it lives under
+ * a name that does not imply otherwise.
  */
-public class Authentication {
+public class RequestContext {
 
-    /** OAuth access token for Slack API authentication. */
+    /** OAuth access token for Slack API access. */
     protected String token;
 
     /** HTTP proxy configuration for API requests. */
     protected Proxy httpProxy;
 
     /**
-     * Creates a new Authentication instance with the specified OAuth token.
+     * Creates a new RequestContext instance with the specified OAuth token.
      *
      * @param token the OAuth access token for Slack API
      */
-    public Authentication(final String token) {
+    public RequestContext(final String token) {
         this.token = token;
     }
 

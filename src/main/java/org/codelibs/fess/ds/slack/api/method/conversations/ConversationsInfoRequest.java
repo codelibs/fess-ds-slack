@@ -16,7 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.conversations;
 
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Request;
 
 /**
@@ -34,11 +34,11 @@ public class ConversationsInfoRequest extends Request<ConversationsInfoResponse>
     /**
      * Constructs a new conversations info request.
      *
-     * @param authentication the authentication credentials for API access
+     * @param requestContext the request context for API access
      * @param channel the channel ID to retrieve information for
      */
-    public ConversationsInfoRequest(final Authentication authentication, final String channel) {
-        super(authentication);
+    public ConversationsInfoRequest(final RequestContext requestContext, final String channel) {
+        super(requestContext);
         this.channel = channel;
     }
 

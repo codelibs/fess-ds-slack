@@ -16,7 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.team;
 
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Request;
 
 /**
@@ -25,12 +25,12 @@ import org.codelibs.fess.ds.slack.api.Request;
 public class TeamInfoRequest extends Request<TeamInfoResponse> {
 
     /**
-     * Creates a new team.info request with the specified authentication.
+     * Creates a new team.info request with the specified request context.
      *
-     * @param authentication the authentication credentials
+     * @param requestContext the request context
      */
-    public TeamInfoRequest(final Authentication authentication) {
-        super(authentication);
+    public TeamInfoRequest(final RequestContext requestContext) {
+        super(requestContext);
     }
 
     @Override

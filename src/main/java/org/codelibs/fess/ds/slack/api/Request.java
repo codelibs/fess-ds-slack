@@ -30,7 +30,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Abstract base class for all Slack API requests.
- * Provides common functionality for authentication, HTTP request building,
+ * Provides common functionality for the request context, HTTP request building,
  * and response parsing for Slack Web API calls.
  *
  * @param <T> the response type that this request will return
@@ -89,16 +89,16 @@ public abstract class Request<T extends Response> {
         slackApiEndpoint = DEFAULT_SLACK_API_ENDPOINT;
     }
 
-    /** Authentication credentials for Slack API access */
-    protected Authentication authentication;
+    /** Request context for Slack API access */
+    protected RequestContext requestContext;
 
     /**
-     * Constructs a new request with the specified authentication credentials.
+     * Constructs a new request with the specified request context.
      *
-     * @param authentication the authentication credentials for Slack API access
+     * @param requestContext the request context for Slack API access
      */
-    public Request(final Authentication authentication) {
-        this.authentication = authentication;
+    public Request(final RequestContext requestContext) {
+        this.requestContext = requestContext;
     }
 
     /**
@@ -172,7 +172,7 @@ public abstract class Request<T extends Response> {
 
     /**
      * Creates a configured HTTP request for the specified API method and path.
-     * Automatically adds authentication headers and proxy configuration.
+     * Automatically adds the authentication header and proxy configuration from the request context.
      *
      * @param method the HTTP method function (GET, POST, PUT, DELETE)
      * @param path the API endpoint path to append to the base URL
@@ -184,8 +184,8 @@ public abstract class Request<T extends Response> {
         if (path != null) {
             buf.append(path);
         }
-        final CurlRequest request = method.apply(buf.toString()).header("Authorization", "Bearer " + authentication.getToken());
-        final Proxy httpProxy = authentication.getHttpProxy();
+        final CurlRequest request = method.apply(buf.toString()).header("Authorization", "Bearer " + requestContext.getToken());
+        final Proxy httpProxy = requestContext.getHttpProxy();
         if (httpProxy != null) {
             request.proxy(httpProxy);
         }

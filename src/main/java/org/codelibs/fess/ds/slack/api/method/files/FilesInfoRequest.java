@@ -16,7 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.files;
 
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Request;
 
 /**
@@ -43,11 +43,11 @@ public class FilesInfoRequest extends Request<FilesInfoResponse> {
     /**
      * Constructs a new files.info request.
      *
-     * @param authentication the authentication credentials
+     * @param requestContext the request context
      * @param file the file ID to retrieve information for
      */
-    public FilesInfoRequest(final Authentication authentication, final String file) {
-        super(authentication);
+    public FilesInfoRequest(final RequestContext requestContext, final String file) {
+        super(requestContext);
         this.file = file;
     }
 

@@ -16,7 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.conversations;
 
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Request;
 
 /**
@@ -39,10 +39,10 @@ public class ConversationsListRequest extends Request<ConversationsListResponse>
     /**
      * Constructs a new conversations list request.
      *
-     * @param authentication the authentication credentials for API access
+     * @param requestContext the request context for API access
      */
-    public ConversationsListRequest(final Authentication authentication) {
-        super(authentication);
+    public ConversationsListRequest(final RequestContext requestContext) {
+        super(requestContext);
     }
 
     /**

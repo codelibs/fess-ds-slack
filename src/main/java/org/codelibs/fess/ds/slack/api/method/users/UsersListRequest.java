@@ -16,7 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.users;
 
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Request;
 
 /**
@@ -35,12 +35,12 @@ public class UsersListRequest extends Request<UsersListResponse> {
     protected Integer limit;
 
     /**
-     * Creates a new users.list request with the specified authentication.
+     * Creates a new users.list request with the specified request context.
      *
-     * @param authentication the authentication credentials
+     * @param requestContext the request context
      */
-    public UsersListRequest(final Authentication authentication) {
-        super(authentication);
+    public UsersListRequest(final RequestContext requestContext) {
+        super(requestContext);
     }
 
     @Override

@@ -29,7 +29,7 @@ import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.Constants;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.chat.ChatGetPermalinkRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryRequest;
@@ -63,12 +63,12 @@ import com.google.common.util.concurrent.UncheckedExecutionException;
 
 /**
  * Slack Web API client that provides high-level access to Slack data including
- * teams, channels, users, messages, and files. This client manages authentication,
+ * teams, channels, users, messages, and files. This client manages the request context,
  * caching, and rate limiting for efficient access to the Slack API.
  *
  * <p>Key features:</p>
  * <ul>
- * <li>Authentication with OAuth tokens</li>
+ * <li>Request context carrying OAuth tokens and proxy settings</li>
  * <li>Caching of users, bots, and channels for performance</li>
  * <li>Support for both public and private channels</li>
  * <li>Pagination handling for large datasets</li>
@@ -124,8 +124,8 @@ public class SlackClient implements Closeable {
 
     /** Whether to include private channels in operations. */
     protected final Boolean includePrivate;
-    /** Authentication credentials for Slack API access. */
-    protected final Authentication authentication;
+    /** Request context for Slack API access. */
+    protected final RequestContext requestContext;
     /** Configuration parameters for the data store. */
     protected DataStoreParams paramMap;
     /** Cache for user information to improve performance. */
@@ -139,7 +139,7 @@ public class SlackClient implements Closeable {
 
     /**
      * Creates a new Slack client with the specified configuration parameters.
-     * Initializes authentication, proxy settings, and caches for improved performance.
+     * Initializes the request context, proxy settings, and caches for improved performance.
      *
      * @param paramMap the configuration parameters including token, proxy settings, and cache sizes
      * @throws SlackDataStoreException if required parameters are missing or invalid
@@ -154,7 +154,7 @@ public class SlackClient implements Closeable {
         this.paramMap = paramMap;
         includePrivate = isIncludePrivate(paramMap);
 
-        authentication = new Authentication(token);
+        requestContext = new RequestContext(token);
 
         final String httpProxyHost = getProxyHost(paramMap);
         final String httpProxyPort = getProxyPort(paramMap);
@@ -163,7 +163,7 @@ public class SlackClient implements Closeable {
                 throw new SlackDataStoreException("parameter " + "'" + PROXY_PORT_PARAM + "' required.");
             }
             try {
-                authentication.setHttpProxy(httpProxyHost, Integer.parseInt(httpProxyPort));
+                requestContext.setHttpProxy(httpProxyHost, Integer.parseInt(httpProxyPort));
             } catch (final NumberFormatException e) {
                 throw new SlackDataStoreException("parameter " + "'" + PROXY_PORT_PARAM + "' invalid.", e);
             }
@@ -219,7 +219,7 @@ public class SlackClient implements Closeable {
      * @return a new BotsInfoRequest instance
      */
     public BotsInfoRequest botsInfo() {
-        return new BotsInfoRequest(authentication);
+        return new BotsInfoRequest(requestContext);
     }
 
     /**
@@ -230,7 +230,7 @@ public class SlackClient implements Closeable {
      * @return a new ChatGetPermalinkRequest instance
      */
     public ChatGetPermalinkRequest chatGetPermalink(final String channel, final String ts) {
-        return new ChatGetPermalinkRequest(authentication, channel, ts);
+        return new ChatGetPermalinkRequest(requestContext, channel, ts);
     }
 
     /**
@@ -239,7 +239,7 @@ public class SlackClient implements Closeable {
      * @return a new ConversationsListRequest instance
      */
     public ConversationsListRequest conversationsList() {
-        return new ConversationsListRequest(authentication);
+        return new ConversationsListRequest(requestContext);
     }
 
     /**
@@ -249,7 +249,7 @@ public class SlackClient implements Closeable {
      * @return a new ConversationsHistoryRequest instance
      */
     public ConversationsHistoryRequest conversationsHistory(final String channel) {
-        return new ConversationsHistoryRequest(authentication, channel);
+        return new ConversationsHistoryRequest(requestContext, channel);
     }
 
     /**
@@ -259,7 +259,7 @@ public class SlackClient implements Closeable {
      * @return a new ConversationsInfoRequest instance
      */
     public ConversationsInfoRequest conversationsInfo(final String channel) {
-        return new ConversationsInfoRequest(authentication, channel);
+        return new ConversationsInfoRequest(requestContext, channel);
     }
 
     /**
@@ -270,7 +270,7 @@ public class SlackClient implements Closeable {
      * @return a new ConversationsRepliesRequest instance
      */
     public ConversationsRepliesRequest conversationsReplies(final String channel, final String ts) {
-        return new ConversationsRepliesRequest(authentication, channel, ts);
+        return new ConversationsRepliesRequest(requestContext, channel, ts);
     }
 
     /**
@@ -279,7 +279,7 @@ public class SlackClient implements Closeable {
      * @return a new FilesListRequest instance
      */
     public FilesListRequest filesList() {
-        return new FilesListRequest(authentication);
+        return new FilesListRequest(requestContext);
     }
 
     /**
@@ -289,7 +289,7 @@ public class SlackClient implements Closeable {
      * @return a new FilesInfoRequest instance
      */
     public FilesInfoRequest filesInfo(final String file) {
-        return new FilesInfoRequest(authentication, file);
+        return new FilesInfoRequest(requestContext, file);
     }
 
     /**
@@ -298,7 +298,7 @@ public class SlackClient implements Closeable {
      * @return a new TeamInfoRequest instance
      */
     public TeamInfoRequest teamInfo() {
-        return new TeamInfoRequest(authentication);
+        return new TeamInfoRequest(requestContext);
     }
 
     /**
@@ -307,7 +307,7 @@ public class SlackClient implements Closeable {
      * @return a new UsersListRequest instance
      */
     public UsersListRequest usersList() {
-        return new UsersListRequest(authentication);
+        return new UsersListRequest(requestContext);
     }
 
     /**
@@ -317,7 +317,7 @@ public class SlackClient implements Closeable {
      * @return a new UsersInfoRequest instance
      */
     public UsersInfoRequest usersInfo(final String user) {
-        return new UsersInfoRequest(authentication, user);
+        return new UsersInfoRequest(requestContext, user);
     }
 
     @Override
@@ -468,7 +468,7 @@ public class SlackClient implements Closeable {
      */
     public CurlResponse getFileResponse(final String fileUrl) {
         final CurlRequest request = Curl.get(fileUrl).header("Authorization", "Bearer " + getToken(paramMap));
-        final Proxy httpProxy = authentication.getHttpProxy();
+        final Proxy httpProxy = requestContext.getHttpProxy();
         if (httpProxy != null) {
             request.proxy(httpProxy);
         }
