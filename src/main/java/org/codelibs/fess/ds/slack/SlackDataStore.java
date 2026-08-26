@@ -105,6 +105,15 @@ public class SlackDataStore extends AbstractDataStore {
     /** Default maximum file size for processing (10MB). */
     protected static final long DEFAULT_MAX_FILESIZE = 10000000L; // 10m
 
+    /**
+     * Default value of {@link #MAX_CONTENT_LENGTH}: defer to {@link
+     * org.codelibs.fess.crawler.helper.ContentLengthHelper}'s per-MIME-type limit, the same
+     * fallback {@code ExtractorBuilder#extract()} already applies on its own {@code
+     * maxContentLength} field when nothing overrides it. This mirrors {@code
+     * OneDriveDataStore}'s {@code DEFAULT_MAX_SIZE} convention (fess-ds-microsoft365).
+     */
+    protected static final long DEFAULT_MAX_CONTENT_LENGTH = -1L;
+
     // parameters
     /** Parameter name for ignoring errors during crawling. */
     protected static final String IGNORE_ERROR = "ignore_error";
@@ -129,8 +138,53 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String CRAWL_ALIVE = "crawl_alive";
     /** Parameter name for thread pool size. */
     protected static final String NUMBER_OF_THREADS = "number_of_threads";
-    /** Parameter name for maximum file size. */
+    /**
+     * Parameter name for the maximum file size, in bytes, this data store will download.
+     *
+     * <p>
+     * This is a <b>transfer bound</b>: {@link #processFile} checks it against {@code
+     * file.getSize()} -- the size Slack's API reports in file metadata -- <i>before</i>
+     * downloading anything, and skips the download entirely (throwing {@code
+     * MaxLengthExceededException}) when the file is too big. It says nothing about how much of
+     * what gets downloaded is then allowed to weigh; see {@link #MAX_CONTENT_LENGTH} for that
+     * bound. The two differ in <i>what</i> they measure rather than in kind: this one trusts the
+     * size Slack reports, its sibling measures the bytes actually received, so a file whose
+     * metadata understates it is still caught -- but neither bounds extracted text, and a
+     * generous {@code max_content_length} does not widen what this parameter lets through the
+     * network call in the first place.
+     * </p>
+     */
     protected static final String MAX_FILESIZE = "max_filesize";
+    /**
+     * Parameter name for the maximum size, in bytes, a downloaded file may have before this
+     * data store refuses to extract text from it.
+     *
+     * <p>
+     * A <b>post-download size bound</b>, not a truncation limit. It is passed to {@code
+     * ExtractorBuilder#maxContentLength(long)}, which compares it against the byte count of the
+     * downloaded stream and throws {@code MaxLengthExceededException} when the file is larger --
+     * <i>before</i> handing anything to Tika. Nothing truncates: an over-size file is skipped
+     * whole, and the value never reaches the extractor. {@code OneDriveDataStore}
+     * (fess-ds-microsoft365) uses the same parameter the same way, as its file-size bound.
+     * </p>
+     *
+     * <p>
+     * It therefore overlaps {@link #MAX_FILESIZE} rather than complementing it. What it adds is
+     * a check on the bytes actually received, after the transfer, where {@code max_filesize}
+     * trusts the size Slack's metadata reports before the transfer.
+     * </p>
+     *
+     * <p>
+     * Unset (or a negative value) means {@link #DEFAULT_MAX_CONTENT_LENGTH}: defer to {@code
+     * ContentLengthHelper}'s per-MIME-type limit. That fallback is not new behavior this
+     * parameter turns on -- {@code ExtractorBuilder#extract()} already runs it internally
+     * whenever nothing else set a non-negative {@code maxContentLength}, which was already true
+     * of every call this data store made before this parameter existed. What this parameter adds
+     * is the ability for an operator to override that per-MIME default with an explicit,
+     * possibly stricter, limit; leaving it unset changes nothing about current behavior.
+     * </p>
+     */
+    protected static final String MAX_CONTENT_LENGTH = "max_content_length";
     /** Parameter name for enabling file crawling. */
     protected static final String FILE_CRAWL = "file_crawl";
     /** Regular expression pattern that matches any MIME type; the default of {@link #SUPPORTED_MIMETYPES}. */
@@ -235,6 +289,7 @@ public class SlackDataStore extends AbstractDataStore {
             final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap) {
         final Map<String, Object> configMap = new HashMap<>();
         configMap.put(MAX_FILESIZE, getMaxFilesize(paramMap));
+        configMap.put(MAX_CONTENT_LENGTH, getMaxContentLength(paramMap));
         configMap.put(IGNORE_ERROR, isIgnoreError(paramMap));
         configMap.put(SUPPORTED_MIMETYPES, getSupportedMimeTypes(paramMap));
         configMap.put(FILE_CRAWL, isFileCrawl(paramMap));
@@ -351,6 +406,29 @@ public class SlackDataStore extends AbstractDataStore {
             return StringUtil.isNotBlank(value) ? Long.parseLong(value) : DEFAULT_MAX_FILESIZE;
         } catch (final NumberFormatException e) {
             return DEFAULT_MAX_FILESIZE;
+        }
+    }
+
+    /**
+     * Extracts the maximum content length configuration -- the post-download size bound applied
+     * by {@code ExtractorBuilder} -- from parameters. See {@link #MAX_CONTENT_LENGTH} for how
+     * this relates to {@link #getMaxFilesize}, the pre-download transfer bound.
+     *
+     * <p>
+     * A blank or non-numeric value falls back to {@link #DEFAULT_MAX_CONTENT_LENGTH} ({@code
+     * -1}), same as an unset parameter: both mean "defer to {@code ContentLengthHelper}".
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the maximum content length in bytes, or a negative value to defer to {@code
+     *         ContentLengthHelper}'s per-MIME-type limit
+     */
+    protected long getMaxContentLength(final DataStoreParams paramMap) {
+        final String value = paramMap.getAsString(MAX_CONTENT_LENGTH);
+        try {
+            return StringUtil.isNotBlank(value) ? Long.parseLong(value) : DEFAULT_MAX_CONTENT_LENGTH;
+        } catch (final NumberFormatException e) {
+            return DEFAULT_MAX_CONTENT_LENGTH;
         }
     }
 
@@ -940,7 +1018,8 @@ public class SlackDataStore extends AbstractDataStore {
                 return;
             }
 
-            final String fileContent = getFileContent(client, file, ignoreError);
+            final long maxContentLength = (Long) configMap.get(MAX_CONTENT_LENGTH);
+            final String fileContent = getFileContent(client, file, maxContentLength, ignoreError);
             fileMap.put(MESSAGE_TITLE, getFileTitle(file));
             fileMap.put(MESSAGE_TEXT, getFileText(file, fileContent));
             // fileMap.put(MESSAGE_TEAM, team.getName());
@@ -1213,12 +1292,23 @@ public class SlackDataStore extends AbstractDataStore {
     /**
      * Downloads and extracts content from a Slack file.
      *
+     * <p>
+     * Passes {@code file.getName()} to the extractor as a filename hint -- Tika uses it as an
+     * additional signal when the declared MIME type is ambiguous or wrong -- and {@code
+     * maxContentLength} as the extraction bound. See {@link #MAX_CONTENT_LENGTH} for how that
+     * bound relates to {@link #MAX_FILESIZE}, the separate pre-download transfer bound already
+     * checked in {@link #processFile} before this method is ever called.
+     * </p>
+     *
      * @param client the Slack client for file download
      * @param file the file to extract content from
+     * @param maxContentLength the maximum content length to pass to the extractor; negative
+     *            defers to {@code ContentLengthHelper}'s per-MIME-type limit (see {@link
+     *            #getMaxContentLength})
      * @param ignoreError whether to ignore extraction errors
      * @return the extracted file content or empty string if extraction fails
      */
-    protected String getFileContent(final SlackClient client, final File file, final boolean ignoreError) {
+    protected String getFileContent(final SlackClient client, final File file, final long maxContentLength, final boolean ignoreError) {
         if (file.getPermalink() != null) {
             final String mimeType = file.getMimetype().trim();
             final String fileUrl = file.getUrlPrivateDownload();
@@ -1230,8 +1320,10 @@ public class SlackDataStore extends AbstractDataStore {
                 try (final InputStream in = response.getContentAsStream()) {
                     return ComponentUtil.getExtractorFactory()
                             .builder(in, null)
+                            .filename(file.getName())
                             .mimeType(mimeType)
                             .extractorName(extractorName)
+                            .maxContentLength(maxContentLength)
                             .extract()
                             .getContent();
                 }
