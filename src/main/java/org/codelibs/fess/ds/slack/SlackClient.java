@@ -129,14 +129,10 @@ public class SlackClient implements Closeable {
     protected static final String DEFAULT_FILE_COUNT = "20";
     /** Default cache size for all caches. */
     protected static final String DEFAULT_CACHE_SIZE = "10000";
-    /** Default connection timeout in milliseconds. */
-    protected static final int DEFAULT_CONNECTION_TIMEOUT = 20000;
-    /** Default read timeout in milliseconds. */
-    protected static final int DEFAULT_READ_TIMEOUT = 20000;
-    /** Default maximum number of retries for a retryable (429/5xx) response. */
-    protected static final int DEFAULT_MAX_RETRY_COUNT = 3;
-    /** Default wait, in milliseconds, before the first retry. */
-    protected static final long DEFAULT_RETRY_INTERVAL = 3000L;
+    // Connection/read timeout and retry defaults live on RequestContext, not here: SlackClient's
+    // constructor unconditionally calls setTimeouts/setRetry, so a copy declared on this class
+    // would be dead in production and could drift from what RequestContext itself falls back to.
+    // See RequestContext.DEFAULT_CONNECTION_TIMEOUT's javadoc.
 
     /** Whether to include private channels in operations. */
     protected final Boolean includePrivate;
@@ -388,32 +384,50 @@ public class SlackClient implements Closeable {
     }
 
     /**
+     * Parses an integer configuration parameter, falling back to a default with a warning
+     * instead of failing the crawl when the value is not a number.
+     *
+     * <p>
+     * Shared by {@link #getConnectionTimeout}, {@link #getReadTimeout}, and
+     * {@link #getMaxRetryCount}: all three follow the same "non-numeric falls back to the
+     * default, with a warning" contract, so the parse/catch/warn logic lives here once.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @param paramName the parameter name to read
+     * @param defaultValue the value to fall back to
+     * @return the parsed value, or {@code defaultValue} if unset or not a number
+     */
+    protected int getIntParam(final DataStoreParams paramMap, final String paramName, final int defaultValue) {
+        final String value = paramMap.getAsString(paramName);
+        try {
+            return StringUtil.isNotBlank(value) ? Integer.parseInt(value) : defaultValue;
+        } catch (final NumberFormatException e) {
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", paramName, value, defaultValue);
+            return defaultValue;
+        }
+    }
+
+    /**
      * Extracts the connection timeout from the configuration parameters.
      *
      * <p>
-     * A non-numeric value falls back to {@link #DEFAULT_CONNECTION_TIMEOUT}
-     * with a warning rather than failing the crawl.
+     * A non-numeric value falls back to {@link RequestContext#DEFAULT_CONNECTION_TIMEOUT} with a
+     * warning rather than failing the crawl.
      * </p>
      *
      * @param paramMap the configuration parameters
      * @return the connection timeout in milliseconds
      */
     protected int getConnectionTimeout(final DataStoreParams paramMap) {
-        final String value = paramMap.getAsString(CONNECTION_TIMEOUT_PARAM);
-        try {
-            return StringUtil.isNotBlank(value) ? Integer.parseInt(value) : DEFAULT_CONNECTION_TIMEOUT;
-        } catch (final NumberFormatException e) {
-            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", CONNECTION_TIMEOUT_PARAM, value,
-                    DEFAULT_CONNECTION_TIMEOUT);
-            return DEFAULT_CONNECTION_TIMEOUT;
-        }
+        return getIntParam(paramMap, CONNECTION_TIMEOUT_PARAM, RequestContext.DEFAULT_CONNECTION_TIMEOUT);
     }
 
     /**
      * Extracts the read timeout from the configuration parameters.
      *
      * <p>
-     * A non-numeric value falls back to {@link #DEFAULT_READ_TIMEOUT} with a
+     * A non-numeric value falls back to {@link RequestContext#DEFAULT_READ_TIMEOUT} with a
      * warning rather than failing the crawl.
      * </p>
      *
@@ -421,42 +435,33 @@ public class SlackClient implements Closeable {
      * @return the read timeout in milliseconds
      */
     protected int getReadTimeout(final DataStoreParams paramMap) {
-        final String value = paramMap.getAsString(READ_TIMEOUT_PARAM);
-        try {
-            return StringUtil.isNotBlank(value) ? Integer.parseInt(value) : DEFAULT_READ_TIMEOUT;
-        } catch (final NumberFormatException e) {
-            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", READ_TIMEOUT_PARAM, value, DEFAULT_READ_TIMEOUT);
-            return DEFAULT_READ_TIMEOUT;
-        }
+        return getIntParam(paramMap, READ_TIMEOUT_PARAM, RequestContext.DEFAULT_READ_TIMEOUT);
     }
 
     /**
      * Extracts the maximum retry count from the configuration parameters.
      *
      * <p>
-     * A non-numeric value falls back to {@link #DEFAULT_MAX_RETRY_COUNT}
-     * with a warning rather than failing the crawl.
+     * A non-numeric value falls back to {@link RequestContext#DEFAULT_MAX_RETRY_COUNT} with a
+     * warning rather than failing the crawl.
      * </p>
      *
      * @param paramMap the configuration parameters
      * @return the maximum number of retries for a retryable (429/5xx) response
      */
     protected int getMaxRetryCount(final DataStoreParams paramMap) {
-        final String value = paramMap.getAsString(MAX_RETRY_COUNT_PARAM);
-        try {
-            return StringUtil.isNotBlank(value) ? Integer.parseInt(value) : DEFAULT_MAX_RETRY_COUNT;
-        } catch (final NumberFormatException e) {
-            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", MAX_RETRY_COUNT_PARAM, value, DEFAULT_MAX_RETRY_COUNT);
-            return DEFAULT_MAX_RETRY_COUNT;
-        }
+        return getIntParam(paramMap, MAX_RETRY_COUNT_PARAM, RequestContext.DEFAULT_MAX_RETRY_COUNT);
     }
 
     /**
      * Extracts the retry interval from the configuration parameters.
      *
      * <p>
-     * A non-numeric value falls back to {@link #DEFAULT_RETRY_INTERVAL}
-     * with a warning rather than failing the crawl.
+     * A non-numeric value falls back to {@link RequestContext#DEFAULT_RETRY_INTERVAL} with a
+     * warning rather than failing the crawl. A numeric but negative value is just as unusable --
+     * it would otherwise reach {@code Thread.sleep} and throw {@link IllegalArgumentException},
+     * which is the same "bad config kills the crawl" failure mode -- so it also falls back to the
+     * default, with its own warning.
      * </p>
      *
      * @param paramMap the configuration parameters
@@ -465,12 +470,20 @@ public class SlackClient implements Closeable {
      */
     protected long getRetryInterval(final DataStoreParams paramMap) {
         final String value = paramMap.getAsString(RETRY_INTERVAL_PARAM);
+        final long parsed;
         try {
-            return StringUtil.isNotBlank(value) ? Long.parseLong(value) : DEFAULT_RETRY_INTERVAL;
+            parsed = StringUtil.isNotBlank(value) ? Long.parseLong(value) : RequestContext.DEFAULT_RETRY_INTERVAL;
         } catch (final NumberFormatException e) {
-            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", RETRY_INTERVAL_PARAM, value, DEFAULT_RETRY_INTERVAL);
-            return DEFAULT_RETRY_INTERVAL;
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", RETRY_INTERVAL_PARAM, value,
+                    RequestContext.DEFAULT_RETRY_INTERVAL);
+            return RequestContext.DEFAULT_RETRY_INTERVAL;
         }
+        if (parsed < 0) {
+            logger.warn("Parameter '{}' must not be negative: {}. Falling back to {}.", RETRY_INTERVAL_PARAM, parsed,
+                    RequestContext.DEFAULT_RETRY_INTERVAL);
+            return RequestContext.DEFAULT_RETRY_INTERVAL;
+        }
+        return parsed;
     }
 
     /**

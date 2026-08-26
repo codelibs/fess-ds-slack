@@ -26,17 +26,25 @@ import java.net.Proxy;
  */
 public class RequestContext {
 
-    /** Default connection timeout in milliseconds. */
-    protected static final int DEFAULT_CONNECTION_TIMEOUT = 20000;
+    /**
+     * Default connection timeout in milliseconds.
+     *
+     * <p>
+     * Public because this is the single source of truth for the default: {@code SlackClient}
+     * reads it directly rather than declaring its own copy, so the value used by a real crawl
+     * and the value this class falls back to when unconfigured can never drift apart.
+     * </p>
+     */
+    public static final int DEFAULT_CONNECTION_TIMEOUT = 20000;
 
-    /** Default read timeout in milliseconds. */
-    protected static final int DEFAULT_READ_TIMEOUT = 20000;
+    /** Default read timeout in milliseconds. See {@link #DEFAULT_CONNECTION_TIMEOUT} for why this is public. */
+    public static final int DEFAULT_READ_TIMEOUT = 20000;
 
-    /** Default maximum number of retries for a retryable response. */
-    protected static final int DEFAULT_MAX_RETRY_COUNT = 3;
+    /** Default maximum number of retries for a retryable response. See {@link #DEFAULT_CONNECTION_TIMEOUT} for why this is public. */
+    public static final int DEFAULT_MAX_RETRY_COUNT = 3;
 
-    /** Default wait, in milliseconds, before the first retry. */
-    protected static final long DEFAULT_RETRY_INTERVAL = 3000L;
+    /** Default wait, in milliseconds, before the first retry. See {@link #DEFAULT_CONNECTION_TIMEOUT} for why this is public. */
+    public static final long DEFAULT_RETRY_INTERVAL = 3000L;
 
     /** OAuth access token for Slack API access. */
     protected String token;
