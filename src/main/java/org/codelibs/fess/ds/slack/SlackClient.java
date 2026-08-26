@@ -403,12 +403,25 @@ public class SlackClient implements Closeable {
         return new UsersInfoRequest(requestContext, user);
     }
 
+    /**
+     * Releases this client's in-memory state.
+     *
+     * <p>
+     * That is: the three lookup caches ({@link #usersCache}, {@link #botsCache}, {@link
+     * #channelsCache}) and {@link #preloadedChannels}, the channel listing captured by the
+     * constructor's {@code conversations.list} preload. There is nothing else here to release --
+     * {@link #requestContext} holds only plain configuration values (token, timeouts, retry
+     * policy, proxy), not an open connection or a resource of its own, and every Slack API call
+     * this class makes opens and closes its own {@link org.codelibs.curl.CurlResponse} at the
+     * call site rather than holding one open on this client.
+     * </p>
+     */
     @Override
     public void close() {
-        // TODO
         usersCache.invalidateAll();
         botsCache.invalidateAll();
         channelsCache.invalidateAll();
+        preloadedChannels.clear();
     }
 
     /**
