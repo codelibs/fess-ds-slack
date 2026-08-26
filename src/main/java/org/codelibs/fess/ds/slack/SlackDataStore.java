@@ -139,6 +139,37 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String EXECUTOR_TIMEOUT = "executor_timeout";
     /** Default number of seconds {@link #storeData} waits for queued crawl work to finish before forcing shutdown. */
     protected static final int DEFAULT_EXECUTOR_TIMEOUT = 60;
+    /** Parameter name for excluding Slack-generated channel-administration messages. */
+    protected static final String IGNORE_SYSTEM_EVENTS = "ignore_system_events";
+
+    /**
+     * Message {@code subtype} values that are Slack-generated channel-administration
+     * notifications rather than content a person wrote, dropped by default (see
+     * {@link #isIgnoreSystemEvents}).
+     *
+     * <p>
+     * Deliberately narrower than every subtype Slack documents at reference/events/message:
+     * </p>
+     * <ul>
+     * <li>{@code file_share} and {@code reply_broadcast} are excluded from this set on purpose --
+     * Slack documents both as "no longer served", so a message can never carry them.</li>
+     * <li>{@code thread_broadcast} is excluded from this set on purpose -- it is a real message
+     * a person wrote, broadcast to the channel in addition to its thread, not a system
+     * notification. {@code SlackClient#getMessageReplies} already skips it for an unrelated
+     * reason (avoiding double-indexing a reply reachable both from conversations.history and
+     * conversations.replies); it must still be indexed once, not zero times.</li>
+     * <li>{@code bot_message} and {@code me_message} are excluded from this set on purpose --
+     * both carry content a person (or an integration acting on a channel's behalf) chose to
+     * post, not a Slack-generated notification.</li>
+     * <li>{@code message_changed}/{@code message_deleted}/{@code message_replied} are excluded
+     * from this set because they are moot: Slack documents all three as {@code hidden: true} and
+     * says they "will not return in calls to conversations.history", so this class never sees
+     * them regardless.</li>
+     * </ul>
+     */
+    protected static final Set<String> SYSTEM_EVENT_SUBTYPES = Set.of("channel_join", "channel_leave", "channel_topic", "channel_purpose",
+            "channel_name", "channel_archive", "channel_unarchive", "group_join", "group_leave", "group_topic", "group_purpose",
+            "group_name", "group_archive", "group_unarchive", "pinned_item", "unpinned_item");
 
     /**
      * Parameter keys withheld from crawl scripts: credentials and proxy configuration.
@@ -199,6 +230,7 @@ public class SlackDataStore extends AbstractDataStore {
         configMap.put(IGNORE_ERROR, isIgnoreError(paramMap));
         configMap.put(SUPPORTED_MIMETYPES, getSupportedMimeTypes(paramMap));
         configMap.put(FILE_CRAWL, isFileCrawl(paramMap));
+        configMap.put(IGNORE_SYSTEM_EVENTS, isIgnoreSystemEvents(paramMap));
         configMap.put(URL_FILTER, getUrlFilter(paramMap));
         if (logger.isDebugEnabled()) {
             logger.debug("configMap: {}", configMap);
@@ -368,6 +400,37 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Determines whether Slack-generated channel-administration messages (see
+     * {@link #SYSTEM_EVENT_SUBTYPES}) should be excluded from indexing.
+     *
+     * <p>
+     * Defaults to {@code true}, unlike every other parameter this PR adds: {@code channel_join}/
+     * {@code channel_leave} and the rest of {@link #SYSTEM_EVENT_SUBTYPES} are search noise, not
+     * content an operator is likely to want indexed, and four of the connectors surveyed for this
+     * plugin's design exclude them by default too. A crawl run without setting this parameter
+     * explicitly indexes fewer documents than it did before this parameter existed.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return true if system-event messages should be excluded, false otherwise
+     */
+    protected boolean isIgnoreSystemEvents(final DataStoreParams paramMap) {
+        return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(IGNORE_SYSTEM_EVENTS, Constants.TRUE));
+    }
+
+    /**
+     * Returns whether the given message is a Slack-generated channel-administration
+     * notification that {@link #isIgnoreSystemEvents} would exclude.
+     *
+     * @param message the message to test
+     * @return true if the message's subtype is one of {@link #SYSTEM_EVENT_SUBTYPES}
+     */
+    protected boolean isSystemEventMessage(final Message message) {
+        final String subtype = message.getSubtype();
+        return subtype != null && SYSTEM_EVENT_SUBTYPES.contains(subtype);
+    }
+
+    /**
      * Creates and configures a URL filter based on include/exclude patterns.
      *
      * @param paramMap the configuration parameters
@@ -414,6 +477,14 @@ public class SlackDataStore extends AbstractDataStore {
     /**
      * Processes all messages in a channel, including threaded replies.
      *
+     * <p>
+     * A message {@link #isSystemEventMessage} recognizes is dropped here, before it is even
+     * dispatched to {@code executorService}, when {@link #isIgnoreSystemEvents} is on: it is
+     * never threadable (see {@code SlackClient#handleApiError}'s {@code thread_not_found}
+     * handling), so skipping it here also avoids a wasted {@code chat.getPermalink} call that
+     * {@link #processMessage} would otherwise make to resolve its URL.
+     * </p>
+     *
      * @param dataConfig the data configuration
      * @param callback the index update callback
      * @param configMap the configuration map
@@ -431,7 +502,14 @@ public class SlackDataStore extends AbstractDataStore {
             final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
             final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client, final Team team,
             final Channel channel, final AtomicReference<SlackApiException> fatalError) {
+        final boolean ignoreSystemEvents = (Boolean) configMap.get(IGNORE_SYSTEM_EVENTS);
         client.getChannelMessages(channel.getId(), message -> {
+            if (ignoreSystemEvents && isSystemEventMessage(message)) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Skipping system event message (subtype={}) in channel {}", message.getSubtype(), channel.getId());
+                }
+                return;
+            }
             safeExecute(executorService, () -> {
                 try {
                     processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
