@@ -23,7 +23,6 @@ import java.util.Map;
 
 import org.codelibs.fess.ds.slack.api.method.team.TeamInfoResponse;
 import org.codelibs.fess.ds.slack.api.type.Channel;
-import org.codelibs.fess.entity.DataStoreParams;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
@@ -179,14 +178,9 @@ public class SlackApiMockServerTest extends UnitDsTestCase {
     @Test
     public void test_strict_answersUnscriptedRequestWithError() {
         server.setStrict(true);
-        // The unscripted response is HTTP 503, which the retry layer added in Phase 2
-        // treats as retryable. max_retry_count=0 keeps this test about the response
-        // shape, not about waiting out a real retry backoff -- the preload calls in
-        // newClient's constructor would otherwise retry too.
-        final DataStoreParams paramMap = new DataStoreParams();
-        paramMap.put("token", "xoxb-test");
-        paramMap.put("max_retry_count", "0");
-        final SlackClient client = server.newClient(paramMap);
+        // The unscripted response is HTTP 400 -- deliberately outside Request's retryable
+        // range (see SlackApiMockServer#setStrict), so this does not pay a retry backoff.
+        final SlackClient client = server.newClient("xoxb-test");
         // team.info was never enqueued for; strict mode must fail loudly instead of
         // quietly returning DEFAULT_RESPONSE_BODY's "ok":true.
         final TeamInfoResponse response = client.teamInfo().execute();
@@ -195,11 +189,11 @@ public class SlackApiMockServerTest extends UnitDsTestCase {
     }
 
     @Test
-    public void test_strict_unscriptedRequestReturns503() throws Exception {
+    public void test_strict_unscriptedRequestReturns400() throws Exception {
         server.setStrict(true);
         final HttpURLConnection conn = (HttpURLConnection) URI.create(server.getEndpoint() + "team.info").toURL().openConnection();
         try {
-            assertEquals(503, conn.getResponseCode());
+            assertEquals(400, conn.getResponseCode());
         } finally {
             conn.disconnect();
         }
