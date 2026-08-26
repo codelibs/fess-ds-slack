@@ -15,6 +15,7 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import org.apache.logging.log4j.Level;
 import org.codelibs.fess.entity.DataStoreParams;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
@@ -65,5 +66,22 @@ public class SlackDataStoreMaxContentLengthTest extends UnitDsTestCase {
         paramMap.put("max_content_length", "not-a-number");
         assertEquals("an invalid value must not blow up the crawl -- fall back like the sibling max_filesize parser does", -1L,
                 dataStore.getMaxContentLength(paramMap));
+    }
+
+    /**
+     * A typo'd value must warn, matching every parameter this phase added -- before this, it
+     * silently reverted to the default with no observable trace at all.
+     */
+    @Test
+    public void test_nonNumericValue_logsWarning() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("max_content_length", "not-a-number");
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.getMaxContentLength(paramMap);
+            assertTrue("a non-numeric max_content_length must warn", appender.hasEventAt(Level.WARN));
+        } finally {
+            appender.detach();
+        }
     }
 }

@@ -407,18 +407,45 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Parses a long configuration parameter, falling back to a default with a warning instead of
+     * silently reverting when the value is not a number.
+     *
+     * <p>
+     * Shared by {@link #getMaxFilesize} and {@link #getMaxContentLength}, matching the
+     * "non-numeric falls back to the default, with a warning" contract {@code
+     * SlackClient#getIntParam} already established for this module's other numeric parameters --
+     * before this, these two silently reverted a typo'd value with no warning at all, while
+     * {@link #getExecutorTimeout} and every parameter this phase added does warn.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @param paramName the parameter name to read
+     * @param defaultValue the value to fall back to
+     * @return the parsed value, or {@code defaultValue} if unset or not a number
+     */
+    protected long getLongParam(final DataStoreParams paramMap, final String paramName, final long defaultValue) {
+        final String value = paramMap.getAsString(paramName);
+        try {
+            return StringUtil.isNotBlank(value) ? Long.parseLong(value) : defaultValue;
+        } catch (final NumberFormatException e) {
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", paramName, value, defaultValue);
+            return defaultValue;
+        }
+    }
+
+    /**
      * Extracts the maximum file size configuration from parameters.
+     *
+     * <p>
+     * A blank or non-numeric value falls back to {@link #DEFAULT_MAX_FILESIZE} with a warning
+     * rather than failing the crawl or silently reverting.
+     * </p>
      *
      * @param paramMap the configuration parameters
      * @return the maximum file size in bytes
      */
     protected long getMaxFilesize(final DataStoreParams paramMap) {
-        final String value = paramMap.getAsString(MAX_FILESIZE);
-        try {
-            return StringUtil.isNotBlank(value) ? Long.parseLong(value) : DEFAULT_MAX_FILESIZE;
-        } catch (final NumberFormatException e) {
-            return DEFAULT_MAX_FILESIZE;
-        }
+        return getLongParam(paramMap, MAX_FILESIZE, DEFAULT_MAX_FILESIZE);
     }
 
     /**
@@ -428,7 +455,8 @@ public class SlackDataStore extends AbstractDataStore {
      *
      * <p>
      * A blank or non-numeric value falls back to {@link #DEFAULT_MAX_CONTENT_LENGTH} ({@code
-     * -1}), same as an unset parameter: both mean "defer to {@code ContentLengthHelper}".
+     * -1}), same as an unset parameter: both mean "defer to {@code ContentLengthHelper}". A
+     * non-numeric value also now warns, matching {@link #getMaxFilesize}.
      * </p>
      *
      * @param paramMap the configuration parameters
@@ -436,12 +464,7 @@ public class SlackDataStore extends AbstractDataStore {
      *         ContentLengthHelper}'s per-MIME-type limit
      */
     protected long getMaxContentLength(final DataStoreParams paramMap) {
-        final String value = paramMap.getAsString(MAX_CONTENT_LENGTH);
-        try {
-            return StringUtil.isNotBlank(value) ? Long.parseLong(value) : DEFAULT_MAX_CONTENT_LENGTH;
-        } catch (final NumberFormatException e) {
-            return DEFAULT_MAX_CONTENT_LENGTH;
-        }
+        return getLongParam(paramMap, MAX_CONTENT_LENGTH, DEFAULT_MAX_CONTENT_LENGTH);
     }
 
     /**
@@ -450,7 +473,11 @@ public class SlackDataStore extends AbstractDataStore {
      *
      * <p>
      * A non-numeric value falls back to {@link #DEFAULT_EXECUTOR_TIMEOUT} with a warning rather
-     * than failing the crawl.
+     * than failing the crawl. A numeric but negative value is just as unusable -- {@code
+     * awaitTermination(negative, SECONDS)} returns immediately without waiting at all, discarding
+     * the entire backlog with nothing but a single warning -- so it also falls back to the
+     * default, with its own warning, matching the clamp {@code connection_timeout}, {@code
+     * read_timeout}, and {@code retry_interval} already get in {@code SlackClient}.
      * </p>
      *
      * @param paramMap the configuration parameters
@@ -458,12 +485,18 @@ public class SlackDataStore extends AbstractDataStore {
      */
     protected int getExecutorTimeout(final DataStoreParams paramMap) {
         final String value = paramMap.getAsString(EXECUTOR_TIMEOUT);
+        final int parsed;
         try {
-            return StringUtil.isNotBlank(value) ? Integer.parseInt(value) : DEFAULT_EXECUTOR_TIMEOUT;
+            parsed = StringUtil.isNotBlank(value) ? Integer.parseInt(value) : DEFAULT_EXECUTOR_TIMEOUT;
         } catch (final NumberFormatException e) {
             logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", EXECUTOR_TIMEOUT, value, DEFAULT_EXECUTOR_TIMEOUT);
             return DEFAULT_EXECUTOR_TIMEOUT;
         }
+        if (parsed < 0) {
+            logger.warn("Parameter '{}' must not be negative: {}. Falling back to {}.", EXECUTOR_TIMEOUT, parsed, DEFAULT_EXECUTOR_TIMEOUT);
+            return DEFAULT_EXECUTOR_TIMEOUT;
+        }
+        return parsed;
     }
 
     /**

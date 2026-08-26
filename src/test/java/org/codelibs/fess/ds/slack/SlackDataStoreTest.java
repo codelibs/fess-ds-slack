@@ -18,6 +18,7 @@ package org.codelibs.fess.ds.slack;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 
+import org.apache.logging.log4j.Level;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 
@@ -76,6 +77,23 @@ public class SlackDataStoreTest extends UnitDsTestCase {
         assertEquals(10000000L, maxFilesize);
     }
 
+    /**
+     * A typo'd value must warn, matching every parameter this phase added -- before this, it
+     * silently reverted to the default with no observable trace at all.
+     */
+    @Test
+    public void test_getMaxFilesize_invalidValue_logsWarning() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("max_filesize", "invalid");
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.getMaxFilesize(paramMap);
+            assertTrue("a non-numeric max_filesize must warn", appender.hasEventAt(Level.WARN));
+        } finally {
+            appender.detach();
+        }
+    }
+
     // Test getExecutorTimeout method
     @Test
     public void test_getExecutorTimeout_defaultValue() {
@@ -96,6 +114,19 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     public void test_getExecutorTimeout_invalidValue() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("executor_timeout", "invalid");
+        final int executorTimeout = dataStore.getExecutorTimeout(paramMap);
+        assertEquals(60, executorTimeout);
+    }
+
+    /**
+     * A negative value is numeric but just as unusable: {@code awaitTermination(negative,
+     * SECONDS)} returns {@code false} immediately without waiting at all, discarding the entire
+     * backlog with nothing but a single warning.
+     */
+    @Test
+    public void test_getExecutorTimeout_negativeValueFallsBackToDefault() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("executor_timeout", "-1");
         final int executorTimeout = dataStore.getExecutorTimeout(paramMap);
         assertEquals(60, executorTimeout);
     }
