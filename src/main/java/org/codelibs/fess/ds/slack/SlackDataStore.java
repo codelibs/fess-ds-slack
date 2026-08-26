@@ -28,8 +28,11 @@ import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -46,6 +49,7 @@ import org.codelibs.fess.crawler.exception.MultipleCrawlingAccessException;
 import org.codelibs.fess.crawler.filter.UrlFilter;
 import org.codelibs.fess.ds.AbstractDataStore;
 import org.codelibs.fess.ds.callback.IndexUpdateCallback;
+import org.codelibs.fess.ds.slack.api.SlackApiException;
 import org.codelibs.fess.ds.slack.api.type.Attachment;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.File;
@@ -112,6 +116,17 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String EXCLUDE_PATTERN = "exclude_pattern";
     /** Parameter name for URL filter configuration. */
     protected static final String URL_FILTER = "url_filter";
+    /**
+     * {@code configMap} key holding this crawl's stop flag, an {@link AtomicBoolean}.
+     *
+     * <p>
+     * Not a user-settable parameter: {@code storeData} puts it there so the per-message and
+     * per-file paths can reach it without adding another argument to six already-long
+     * signatures, the same way {@link #URL_FILTER} carries a resolved component rather than a
+     * setting.
+     * </p>
+     */
+    protected static final String CRAWL_ALIVE = "crawl_alive";
     /** Parameter name for thread pool size. */
     protected static final String NUMBER_OF_THREADS = "number_of_threads";
     /** Parameter name for maximum file size. */
@@ -120,6 +135,10 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String FILE_CRAWL = "file_crawl";
     /** Regular expression pattern that matches any MIME type; the default of {@link #SUPPORTED_MIMETYPES}. */
     protected static final String MATCH_ALL_MIMETYPES = ".*";
+    /** Parameter name for how long, in seconds, to wait for queued crawl work to finish before forcing shutdown. */
+    protected static final String EXECUTOR_TIMEOUT = "executor_timeout";
+    /** Default number of seconds {@link #storeData} waits for queued crawl work to finish before forcing shutdown. */
+    protected static final int DEFAULT_EXECUTOR_TIMEOUT = 60;
 
     /**
      * Parameter keys withheld from crawl scripts: credentials and proxy configuration.
@@ -186,15 +205,40 @@ public class SlackDataStore extends AbstractDataStore {
         }
 
         final ExecutorService executorService = newFixedThreadPool(Integer.parseInt(paramMap.getAsString(NUMBER_OF_THREADS, "1")));
+        // A fatal SlackApiException thrown inside a worker thread (conversations.replies, run
+        // from processChannelMessages's executorService.execute(...)) does not propagate to this
+        // method the way one thrown on this thread does: ThreadPoolExecutor swallows an
+        // uncaught RuntimeException from its Runnable via the default uncaught-exception handler
+        // instead of re-throwing it to the submitter. Without this latch, storeData would return
+        // normally -- reporting success -- after a worker silently ate a fatal error. Only the
+        // first one is kept: a later failure on another worker is very likely the same fatal
+        // condition recurring, not new information.
+        final AtomicReference<SlackApiException> fatalError = new AtomicReference<>();
+        // Scoped to this one crawl, deliberately NOT the inherited AbstractDataStore#alive flag.
+        // A data store is a LastaDi singleton (see fess_ds++.xml) that DataStoreFactory hands to
+        // every crawl for the lifetime of the JVM, and nothing in Fess ever sets `alive` back to
+        // true -- it is assigned exactly once, at field initialisation. Calling stop() to abort
+        // one crawl would therefore leave every later crawl of every Slack DataConfig walking
+        // zero channels and indexing zero documents, silently and permanently. A local
+        // AtomicBoolean, rather than a plain local variable, because the abort can be requested
+        // from a worker thread (see resolveFailureUrl, reached from processMessage/processFile
+        // via executorService) while this method's own channel walk reads it.
+        final AtomicBoolean crawlAlive = new AtomicBoolean(true);
+        configMap.put(CRAWL_ALIVE, crawlAlive);
         try (final SlackClient client = new SlackClient(paramMap)) {
             final Team team = client.getTeam();
             final boolean fileCrawl = (Boolean) configMap.get(FILE_CRAWL);
             client.getChannels(channel -> {
+                // Checked before dispatching the next channel, so an abort skips channels that
+                // have not been started yet rather than only cutting short the one in progress.
+                if (!crawlAlive.get()) {
+                    return;
+                }
                 processChannelMessages(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
-                        channel);
+                        channel, fatalError);
                 if (fileCrawl) {
                     processChannelFiles(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
-                            channel);
+                            channel, fatalError);
                 }
             });
 
@@ -202,12 +246,39 @@ public class SlackDataStore extends AbstractDataStore {
                 logger.debug("Shutting down thread executor.");
             }
 
+            final int executorTimeout = getExecutorTimeout(paramMap);
             executorService.shutdown();
-            executorService.awaitTermination(60, TimeUnit.SECONDS);
+            if (!executorService.awaitTermination(executorTimeout, TimeUnit.SECONDS)) {
+                logger.warn("Executor did not terminate within {} seconds ({}={}); interrupting the tasks still running.", executorTimeout,
+                        EXECUTOR_TIMEOUT, executorTimeout);
+                // The JDK's documented two-phase shutdown, and the reason it matters here:
+                // shutdownNow() only *requests* cancellation and returns immediately, so a
+                // single wait would let the fatalError.get() below run while a worker is still
+                // unwinding -- and a worker that latches a fatal error during that unwind would
+                // be lost, leaving a failed crawl to report success. One request can legitimately
+                // outlive the first window: max_retry_count retries, each waiting up to a minute
+                // or for as long as Slack's Retry-After asks. A second bounded wait narrows that
+                // race rather than closing it, which is why the give-up is logged at warn.
+                executorService.shutdownNow();
+                if (!executorService.awaitTermination(executorTimeout, TimeUnit.SECONDS)) {
+                    logger.warn("Executor did not terminate {} seconds after being interrupted either; queued crawl work was "
+                            + "discarded, and a failure discovered from here on cannot be reported.", executorTimeout);
+                }
+            }
         } catch (final InterruptedException e) {
             throw new InterruptedRuntimeException(e);
         } finally {
             executorService.shutdownNow();
+        }
+
+        // Re-thrown after the executor has been shut down and awaited above. On the normal path
+        // awaitTermination returned true, so every worker has finished and none can still be
+        // touching paramMap/callback. If both waits timed out instead, that guarantee does not
+        // hold -- awaitTermination returning false means by definition the pool has not
+        // terminated -- which is what the second warning above reports.
+        final SlackApiException fatalException = fatalError.get();
+        if (fatalException != null) {
+            throw fatalException;
         }
     }
 
@@ -223,6 +294,28 @@ public class SlackDataStore extends AbstractDataStore {
             return StringUtil.isNotBlank(value) ? Long.parseLong(value) : DEFAULT_MAX_FILESIZE;
         } catch (final NumberFormatException e) {
             return DEFAULT_MAX_FILESIZE;
+        }
+    }
+
+    /**
+     * Extracts, in seconds, how long {@link #storeData} should wait for queued crawl work to
+     * finish before forcing shutdown.
+     *
+     * <p>
+     * A non-numeric value falls back to {@link #DEFAULT_EXECUTOR_TIMEOUT} with a warning rather
+     * than failing the crawl.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the number of seconds to wait for queued work to finish before forcing shutdown
+     */
+    protected int getExecutorTimeout(final DataStoreParams paramMap) {
+        final String value = paramMap.getAsString(EXECUTOR_TIMEOUT);
+        try {
+            return StringUtil.isNotBlank(value) ? Integer.parseInt(value) : DEFAULT_EXECUTOR_TIMEOUT;
+        } catch (final NumberFormatException e) {
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", EXECUTOR_TIMEOUT, value, DEFAULT_EXECUTOR_TIMEOUT);
+            return DEFAULT_EXECUTOR_TIMEOUT;
         }
     }
 
@@ -315,17 +408,23 @@ public class SlackDataStore extends AbstractDataStore {
      * @param client the Slack client
      * @param team the team information
      * @param channel the channel to process
+     * @param fatalError latch shared with {@link #storeData} for a fatal {@link SlackApiException}
+     *            raised on this method's worker thread (see {@link #latchFatalError})
      */
     protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
             final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
             final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client, final Team team,
-            final Channel channel) {
+            final Channel channel, final AtomicReference<SlackApiException> fatalError) {
         client.getChannelMessages(channel.getId(), message -> {
-            executorService.execute(() -> {
-                processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
-                if (isThreadParent(message)) {
-                    processMessageReplies(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel,
-                            message);
+            safeExecute(executorService, () -> {
+                try {
+                    processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+                    if (isThreadParent(message)) {
+                        processMessageReplies(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel,
+                                message);
+                    }
+                } catch (final SlackApiException e) {
+                    latchFatalError(executorService, fatalError, e);
                 }
             });
         });
@@ -345,6 +444,55 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Records the first fatal Slack API error seen by any worker thread and shuts the executor
+     * down immediately.
+     *
+     * <p>
+     * Chosen over letting the backlog drain naturally: once the token itself is no longer valid,
+     * every other queued or future {@code conversations.replies} call is going to fail the exact
+     * same way, so continuing to run them only delays reporting a failure the crawl already knows
+     * about. {@link #safeExecute} is what keeps this safe for the caller -- {@code
+     * client.getChannels}/{@code getChannelMessages}/{@code getChannelFiles} keep walking and
+     * dispatching on the calling thread after this runs, and a plain {@code execute} call on an
+     * already-shut-down executor throws {@link RejectedExecutionException}, which would otherwise
+     * surface as the crawl's reported failure instead of the {@link SlackApiException} latched
+     * here.
+     * </p>
+     *
+     * @param executorService the executor to shut down
+     * @param fatalError the latch shared with {@link #storeData}; only the first error is kept, since a
+     *            second worker hitting this almost certainly means the same fatal condition, not
+     *            new information
+     * @param e the fatal error just caught
+     */
+    protected void latchFatalError(final ExecutorService executorService, final AtomicReference<SlackApiException> fatalError,
+            final SlackApiException e) {
+        if (fatalError.compareAndSet(null, e)) {
+            executorService.shutdownNow();
+        }
+    }
+
+    /**
+     * Submits {@code task} to {@code executorService}, discarding it silently if the executor has
+     * already been shut down (see {@link #latchFatalError}) instead of letting
+     * {@link RejectedExecutionException} propagate to the caller -- typically
+     * {@link SlackClient}'s paging loop, one channel/message/file at a time, which is not
+     * prepared to handle it and would otherwise mask the crawl's real, already-latched failure.
+     *
+     * @param executorService the executor to submit to
+     * @param task the task to run
+     */
+    protected void safeExecute(final ExecutorService executorService, final Runnable task) {
+        try {
+            executorService.execute(task);
+        } catch (final RejectedExecutionException e) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Discarding a task submitted after the executor was shut down for a fatal error.", e);
+            }
+        }
+    }
+
+    /**
      * Processes all files in a channel for indexing.
      *
      * @param dataConfig the data configuration
@@ -357,13 +505,20 @@ public class SlackDataStore extends AbstractDataStore {
      * @param client the Slack client
      * @param team the team information
      * @param channel the channel to process
+     * @param fatalError latch shared with {@link #storeData} for a fatal {@link SlackApiException}
+     *            raised on this method's worker thread (see {@link #latchFatalError})
      */
     protected void processChannelFiles(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-            final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel) {
+            final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel,
+            final AtomicReference<SlackApiException> fatalError) {
         client.getChannelFiles(channel.getId(), file -> {
-            executorService.execute(() -> {
-                processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, file);
+            safeExecute(executorService, () -> {
+                try {
+                    processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, file);
+                } catch (final SlackApiException e) {
+                    latchFatalError(executorService, fatalError, e);
+                }
             });
         });
     }
@@ -414,6 +569,48 @@ public class SlackDataStore extends AbstractDataStore {
             }
         });
         return resultMap;
+    }
+
+    /**
+     * Resolves the URL to record via {@code FailureUrlService} for a failed crawl, and, when the
+     * failure asks to abort, clears this crawl's stop flag.
+     *
+     * <p>
+     * Shared by both {@code catch (CrawlingAccessException)} blocks in {@link #processMessage}
+     * and {@link #processFile}. Before this, both ignored {@link DataStoreCrawlingException#getUrl()}
+     * and {@link DataStoreCrawlingException#aborted()} on a target that carried them, always
+     * recording the caller-computed {@code fallbackUrl} (a message's permalink or a file's own
+     * permalink) even when the exception named a more precise URL, and never reacting to a
+     * request to abort. Matches the pattern in {@code fess-ds-example}'s
+     * {@code ExampleDataStore}: that class uses a local {@code running} flag, which cannot be a
+     * plain local variable here because {@link SlackDataStore} dispatches message and file
+     * processing to worker threads (see {@code storeData}'s {@code executorService}), so one
+     * caller's stack frame would not be seen by the others -- hence the shared
+     * {@link AtomicBoolean}.
+     * </p>
+     *
+     * <p>
+     * Deliberately <em>not</em> {@link #stop()}. That flips the inherited
+     * {@link org.codelibs.fess.ds.AbstractDataStore#alive} flag, which is assigned {@code true}
+     * exactly once (at field initialisation) and is never reset by Fess. Because a data store is
+     * a LastaDi singleton reused by every crawl for the lifetime of the JVM, aborting one crawl
+     * that way would leave every subsequent crawl of every Slack {@code DataConfig} walking zero
+     * channels and reporting success, until Fess is restarted.
+     * </p>
+     *
+     * @param target the (possibly unwrapped) crawling exception being handled
+     * @param fallbackUrl the URL to use when {@code target} carries none of its own
+     * @param crawlAlive this crawl's stop flag, cleared when {@code target} asks to abort
+     * @return the URL to record via {@code FailureUrlService}
+     */
+    protected String resolveFailureUrl(final Throwable target, final String fallbackUrl, final AtomicBoolean crawlAlive) {
+        if (target instanceof final DataStoreCrawlingException dce) {
+            if (dce.aborted()) {
+                crawlAlive.set(false);
+            }
+            return dce.getUrl();
+        }
+        return fallbackUrl;
     }
 
     /**
@@ -526,7 +723,8 @@ public class SlackDataStore extends AbstractDataStore {
             }
 
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
-            failureUrlService.store(dataConfig, errorName, url, target);
+            failureUrlService.store(dataConfig, errorName, resolveFailureUrl(target, url, (AtomicBoolean) configMap.get(CRAWL_ALIVE)),
+                    target);
             crawlerStatsHelper.record(statsKey, StatsAction.ACCESS_EXCEPTION);
         } catch (final Throwable t) {
             logger.warn("Crawling Access Exception at : {}", dataMap, t);
@@ -651,7 +849,8 @@ public class SlackDataStore extends AbstractDataStore {
             }
 
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
-            failureUrlService.store(dataConfig, errorName, url, target);
+            failureUrlService.store(dataConfig, errorName, resolveFailureUrl(target, url, (AtomicBoolean) configMap.get(CRAWL_ALIVE)),
+                    target);
             crawlerStatsHelper.record(statsKey, StatsAction.ACCESS_EXCEPTION);
         } catch (final Throwable t) {
             logger.warn("Crawling Access Exception at : {}", dataMap, t);
