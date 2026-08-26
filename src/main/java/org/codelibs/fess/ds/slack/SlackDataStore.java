@@ -90,6 +90,48 @@ import com.google.common.util.concurrent.UncheckedExecutionException;
  * <li>file_crawl: Whether to crawl file attachments</li>
  * <li>number_of_threads: Thread pool size for parallel processing</li>
  * </ul>
+ *
+ * <h2>What happens when a Slack API call fails</h2>
+ * <p>
+ * Four mechanisms cooperate, each documented in full where it lives; this is only the map of how
+ * they hand off to each other, since no single one of their javadocs states the whole path:
+ * </p>
+ * <ol>
+ * <li><b>Retry-on-status</b> ({@code org.codelibs.fess.ds.slack.api.Request#execute}): a 429 or
+ * 5xx HTTP status is retried up to {@code max_retry_count} times, honouring a {@code Retry-After}
+ * header when present. If every attempt still lands on a retryable status, the last attempt's
+ * body is parsed and returned like any other response, but flagged via
+ * {@link org.codelibs.fess.ds.slack.api.Response#retriesExhausted()} -- see that method's
+ * javadoc for why this layer does not decide fatal-vs-skip itself.</li>
+ * <li><b>Body classification</b> ({@link SlackClient#handleApiError}): every paginated call
+ * (files.list, conversations.list, conversations.history, conversations.replies, users.list)
+ * routes its {@code ok:false} body here. A code in {@link SlackClient#FATAL_ERROR_CODES} (the
+ * token itself cannot authenticate) or {@link SlackClient#TRANSIENT_ERROR_CODES} (a transient
+ * server-side condition, not a property of the specific channel/page), or a response with
+ * {@code retriesExhausted()} set regardless of its code, throws {@link
+ * org.codelibs.fess.ds.slack.api.SlackApiException}. Everything else is warned and skipped for
+ * just that channel/page.</li>
+ * <li><b>Propagation or worker latching</b>: a {@link org.codelibs.fess.ds.slack.api.SlackApiException}
+ * thrown on {@link #storeData}'s own thread (files.list, conversations.list,
+ * conversations.history, users.list, and the constructor's preload of both listing calls)
+ * propagates directly out of {@link #storeData}. One raised on a worker thread dispatched by
+ * {@link #processChannelMessages}/{@link #processChannelFiles} (conversations.replies via {@link
+ * #processMessageReplies}) cannot reach the submitting thread that way -- {@link
+ * java.util.concurrent.ThreadPoolExecutor} swallows an uncaught exception from its {@code
+ * Runnable} -- so it is caught there and handed to {@link #latchFatalError} instead, which
+ * records it and stops the crawl (next mechanism) rather than letting it vanish.</li>
+ * <li><b>Two flags for stopping</b>: an operator's admin-UI "stop" flips the inherited {@code
+ * alive} flag, which Fess assigns {@code true} once at field initialisation and never resets;
+ * {@link #latchFatalError} and an aborting {@link #resolveFailureUrl} instead clear this crawl's
+ * own {@link #CRAWL_ALIVE} flag, deliberately <em>not</em> {@code alive}, because a data store is
+ * a LastaDi singleton reused by every later crawl (see {@link #latchFatalError}). Both are
+ * honoured together: every paging loop in {@link SlackClient} consults a supplier over the pair,
+ * and {@link #storeData}'s own channel-dispatch loop checks both before dispatching the next
+ * channel. {@link #storeData} tolerates both landing at once: an admin-UI stop with no latched
+ * error logs that the crawl was cut short; a latched error takes precedence and is (re)thrown
+ * once the executor has drained, which is the more actionable of the two for an operator to
+ * see.</li>
+ * </ol>
  */
 public class SlackDataStore extends AbstractDataStore {
 
