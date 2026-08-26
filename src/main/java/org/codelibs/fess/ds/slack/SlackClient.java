@@ -105,6 +105,10 @@ public class SlackClient implements Closeable {
     protected static final String CONNECTION_TIMEOUT_PARAM = "connection_timeout";
     /** Parameter name for read timeout configuration. */
     protected static final String READ_TIMEOUT_PARAM = "read_timeout";
+    /** Parameter name for the maximum number of retries on a 429/5xx response. */
+    protected static final String MAX_RETRY_COUNT_PARAM = "max_retry_count";
+    /** Parameter name for the wait, in milliseconds, before the first retry. */
+    protected static final String RETRY_INTERVAL_PARAM = "retry_interval";
     /** Parameter name for file type filtering. */
     protected static final String FILE_TYPES_PARAM = "file_types";
 
@@ -129,6 +133,10 @@ public class SlackClient implements Closeable {
     protected static final int DEFAULT_CONNECTION_TIMEOUT = 20000;
     /** Default read timeout in milliseconds. */
     protected static final int DEFAULT_READ_TIMEOUT = 20000;
+    /** Default maximum number of retries for a retryable (429/5xx) response. */
+    protected static final int DEFAULT_MAX_RETRY_COUNT = 3;
+    /** Default wait, in milliseconds, before the first retry. */
+    protected static final long DEFAULT_RETRY_INTERVAL = 3000L;
 
     /** Whether to include private channels in operations. */
     protected final Boolean includePrivate;
@@ -178,6 +186,7 @@ public class SlackClient implements Closeable {
         }
 
         requestContext.setTimeouts(getConnectionTimeout(paramMap), getReadTimeout(paramMap));
+        requestContext.setRetry(getMaxRetryCount(paramMap), getRetryInterval(paramMap));
 
         usersCache = CacheBuilder.newBuilder()
                 // Each user is cached under both its ID and its name (see the preload
@@ -418,6 +427,49 @@ public class SlackClient implements Closeable {
         } catch (final NumberFormatException e) {
             logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", READ_TIMEOUT_PARAM, value, DEFAULT_READ_TIMEOUT);
             return DEFAULT_READ_TIMEOUT;
+        }
+    }
+
+    /**
+     * Extracts the maximum retry count from the configuration parameters.
+     *
+     * <p>
+     * A non-numeric value falls back to {@link #DEFAULT_MAX_RETRY_COUNT}
+     * with a warning rather than failing the crawl.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the maximum number of retries for a retryable (429/5xx) response
+     */
+    protected int getMaxRetryCount(final DataStoreParams paramMap) {
+        final String value = paramMap.getAsString(MAX_RETRY_COUNT_PARAM);
+        try {
+            return StringUtil.isNotBlank(value) ? Integer.parseInt(value) : DEFAULT_MAX_RETRY_COUNT;
+        } catch (final NumberFormatException e) {
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", MAX_RETRY_COUNT_PARAM, value, DEFAULT_MAX_RETRY_COUNT);
+            return DEFAULT_MAX_RETRY_COUNT;
+        }
+    }
+
+    /**
+     * Extracts the retry interval from the configuration parameters.
+     *
+     * <p>
+     * A non-numeric value falls back to {@link #DEFAULT_RETRY_INTERVAL}
+     * with a warning rather than failing the crawl.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the wait, in milliseconds, before the first retry when no {@code Retry-After}
+     *         header is present
+     */
+    protected long getRetryInterval(final DataStoreParams paramMap) {
+        final String value = paramMap.getAsString(RETRY_INTERVAL_PARAM);
+        try {
+            return StringUtil.isNotBlank(value) ? Long.parseLong(value) : DEFAULT_RETRY_INTERVAL;
+        } catch (final NumberFormatException e) {
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", RETRY_INTERVAL_PARAM, value, DEFAULT_RETRY_INTERVAL);
+            return DEFAULT_RETRY_INTERVAL;
         }
     }
 

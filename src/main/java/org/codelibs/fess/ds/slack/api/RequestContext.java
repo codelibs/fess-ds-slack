@@ -20,9 +20,9 @@ import java.net.Proxy;
 
 /**
  * Holds the per-client request configuration for Slack API calls: OAuth
- * credentials, proxy settings, and connection/read timeouts. It carries more
- * than authentication, so it lives under a name that does not imply
- * otherwise.
+ * credentials, proxy settings, connection/read timeouts, and retry
+ * behaviour. It carries more than authentication, so it lives under a name
+ * that does not imply otherwise.
  */
 public class RequestContext {
 
@@ -31,6 +31,12 @@ public class RequestContext {
 
     /** Default read timeout in milliseconds. */
     protected static final int DEFAULT_READ_TIMEOUT = 20000;
+
+    /** Default maximum number of retries for a retryable response. */
+    protected static final int DEFAULT_MAX_RETRY_COUNT = 3;
+
+    /** Default wait, in milliseconds, before the first retry. */
+    protected static final long DEFAULT_RETRY_INTERVAL = 3000L;
 
     /** OAuth access token for Slack API access. */
     protected String token;
@@ -43,6 +49,12 @@ public class RequestContext {
 
     /** Read timeout in milliseconds. */
     protected int readTimeout = DEFAULT_READ_TIMEOUT;
+
+    /** Maximum number of retries for a retryable (429/5xx) response. */
+    protected int maxRetryCount = DEFAULT_MAX_RETRY_COUNT;
+
+    /** Wait, in milliseconds, before the first retry when no Retry-After header is present. */
+    protected long retryInterval = DEFAULT_RETRY_INTERVAL;
 
     /**
      * Creates a new RequestContext instance with the specified OAuth token.
@@ -108,6 +120,37 @@ public class RequestContext {
     public void setTimeouts(final int connectionTimeout, final int readTimeout) {
         this.connectionTimeout = connectionTimeout;
         this.readTimeout = readTimeout;
+    }
+
+    /**
+     * Returns the maximum number of retries for a retryable response.
+     *
+     * @return the maximum retry count
+     */
+    public int getMaxRetryCount() {
+        return maxRetryCount;
+    }
+
+    /**
+     * Returns the wait, in milliseconds, before the first retry when no
+     * {@code Retry-After} header is present.
+     *
+     * @return the retry interval in milliseconds
+     */
+    public long getRetryInterval() {
+        return retryInterval;
+    }
+
+    /**
+     * Configures retry behaviour for retryable (429/5xx) responses.
+     *
+     * @param maxRetryCount the maximum number of retries
+     * @param retryInterval the wait, in milliseconds, before the first retry when no
+     *            {@code Retry-After} header is present
+     */
+    public void setRetry(final int maxRetryCount, final long retryInterval) {
+        this.maxRetryCount = maxRetryCount;
+        this.retryInterval = retryInterval;
     }
 
 }

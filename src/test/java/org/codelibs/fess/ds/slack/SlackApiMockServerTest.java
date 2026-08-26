@@ -23,6 +23,7 @@ import java.util.Map;
 
 import org.codelibs.fess.ds.slack.api.method.team.TeamInfoResponse;
 import org.codelibs.fess.ds.slack.api.type.Channel;
+import org.codelibs.fess.entity.DataStoreParams;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
@@ -178,7 +179,14 @@ public class SlackApiMockServerTest extends UnitDsTestCase {
     @Test
     public void test_strict_answersUnscriptedRequestWithError() {
         server.setStrict(true);
-        final SlackClient client = server.newClient("xoxb-test");
+        // The unscripted response is HTTP 503, which the retry layer added in Phase 2
+        // treats as retryable. max_retry_count=0 keeps this test about the response
+        // shape, not about waiting out a real retry backoff -- the preload calls in
+        // newClient's constructor would otherwise retry too.
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-test");
+        paramMap.put("max_retry_count", "0");
+        final SlackClient client = server.newClient(paramMap);
         // team.info was never enqueued for; strict mode must fail loudly instead of
         // quietly returning DEFAULT_RESPONSE_BODY's "ok":true.
         final TeamInfoResponse response = client.teamInfo().execute();

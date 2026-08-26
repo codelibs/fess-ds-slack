@@ -21,6 +21,7 @@ import java.util.function.Function;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.codelibs.core.exception.InterruptedRuntimeException;
 import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.curl.CurlResponse;
@@ -56,6 +57,19 @@ public abstract class Request<T extends Response> {
 
     /** Jackson ObjectMapper for JSON parsing */
     protected static final ObjectMapper mapper = new ObjectMapper();
+
+    /**
+     * Upper bound, in milliseconds, on the wait before a retry, regardless of
+     * whether it came from a {@code Retry-After} header or the exponential
+     * backoff. Slack's {@code Retry-After} can legitimately exceed 30
+     * seconds, so a header value is honoured up to this cap rather than
+     * clamped to something smaller; a missing or malformed header must still
+     * never produce an unbounded wait.
+     */
+    protected static final long MAX_RETRY_WAIT_MILLIS = 60000L;
+
+    /** The {@code Retry-After} response header name. */
+    protected static final String RETRY_AFTER_HEADER = "Retry-After";
 
     /**
      * Returns the Slack Web API endpoint currently in effect.
@@ -147,14 +161,22 @@ public abstract class Request<T extends Response> {
     }
 
     /**
-     * Executes the given request, parses the JSON body into this request's
-     * response type and always releases the underlying connection.
+     * Executes the given request, retrying on a 429 or 5xx response, parses
+     * the JSON body into this request's response type and always releases
+     * the underlying connection.
      *
      * <p>
      * This is the single place a subclass calls to run its prepared request,
-     * so it is also the single place a future retry layer needs to change to
-     * read {@link CurlResponse#getHttpStatusCode()} or a
-     * {@code Retry-After} header before the response is parsed and closed.
+     * so it is also the single place that decides whether a response is
+     * retried. Re-executing the same {@link CurlRequest} instance issues a
+     * byte-identical request: params are not re-appended, headers are not
+     * duplicated, and the URL is not mutated.
+     * </p>
+     *
+     * <p>
+     * <b>Retries are decided from the HTTP status code only.</b> A 200
+     * response's parsed {@code ok}/{@code error} body is a separate
+     * judgement that belongs to {@code SlackClient}, not this layer.
      * </p>
      *
      * @param request the prepared request
@@ -163,11 +185,89 @@ public abstract class Request<T extends Response> {
      * @throws SlackDataStoreException if closing the response fails
      */
     protected T execute(final CurlRequest request, final Class<T> valueType) {
-        try (final CurlResponse response = request.execute()) {
-            return parseResponse(response.getContentAsString(), valueType);
-        } catch (final IOException e) {
-            throw new SlackDataStoreException("Failed to close the response.", e);
+        final int maxRetryCount = requestContext.getMaxRetryCount();
+        for (int attempt = 0;; attempt++) {
+            try (final CurlResponse response = request.execute()) {
+                final int status = response.getHttpStatusCode();
+                if (isRetryableStatus(status) && attempt < maxRetryCount) {
+                    sleepBeforeRetry(response, attempt + 1, status);
+                    continue;
+                }
+                return parseResponse(response.getContentAsString(), valueType);
+            } catch (final IOException e) {
+                throw new SlackDataStoreException("Failed to close the response.", e);
+            }
         }
+    }
+
+    /**
+     * Determines whether an HTTP status code should be retried.
+     *
+     * <p>
+     * Retries 429 (rate limited) and any 5xx server error. {@code
+     * fatal_error} is documented as also arising from an over-large page
+     * size -- a permanent condition -- which is why this alone never decides
+     * to retry without the caller also bounding the attempt count.
+     * </p>
+     *
+     * @param status the HTTP status code
+     * @return true if the status code should be retried
+     */
+    protected boolean isRetryableStatus(final int status) {
+        return status == 429 || (status >= 500 && status < 600);
+    }
+
+    /**
+     * Waits before retrying a request and logs the retry so a slower crawl
+     * has a visible cause instead of an unexplained one.
+     *
+     * @param response the response that triggered the retry
+     * @param attempt the 1-based retry attempt number, for logging
+     * @param status the HTTP status code that triggered the retry, for logging
+     */
+    protected void sleepBeforeRetry(final CurlResponse response, final int attempt, final int status) {
+        final long waitMillis = Math.min(getRetryWaitMillis(response, attempt), MAX_RETRY_WAIT_MILLIS);
+        logger.warn("Retrying a Slack API request (attempt {}) after HTTP {}; waiting {} ms.", attempt, status, waitMillis);
+        try {
+            Thread.sleep(waitMillis);
+        } catch (final InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new InterruptedRuntimeException(e);
+        }
+    }
+
+    /**
+     * Determines the wait, in milliseconds, before the given retry attempt,
+     * not yet capped by {@link #MAX_RETRY_WAIT_MILLIS}.
+     *
+     * <p>
+     * Honours the response's {@code Retry-After} header (in seconds) when
+     * present and numeric. {@code Retry-After} can instead be an RFC 1123
+     * date, which is not a number of seconds; a non-numeric value falls back
+     * to an exponential backoff from
+     * {@link RequestContext#getRetryInterval()} rather than failing the
+     * request.
+     * </p>
+     *
+     * @param response the response that triggered the retry
+     * @param attempt the 1-based retry attempt number
+     * @return the wait in milliseconds, not yet capped
+     */
+    protected long getRetryWaitMillis(final CurlResponse response, final int attempt) {
+        final String retryAfter = response.getHeaderValue(RETRY_AFTER_HEADER);
+        if (retryAfter != null) {
+            try {
+                return Long.parseLong(retryAfter.trim()) * 1000L;
+            } catch (final NumberFormatException e) {
+                // Not a number of seconds (e.g. an RFC 1123 date); fall back to the backoff below.
+            }
+        }
+        // The exponent is capped well below where it could overflow: 2^20 times any
+        // realistic retry_interval already dwarfs MAX_RETRY_WAIT_MILLIS, so an
+        // unusually large max_retry_count cannot turn this into a negative (and
+        // therefore Thread.sleep-rejected) wait.
+        final int shift = Math.min(attempt - 1, 20);
+        return requestContext.getRetryInterval() * (1L << shift);
     }
 
     /**
