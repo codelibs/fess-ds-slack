@@ -991,6 +991,18 @@ public class SlackDataStore extends AbstractDataStore {
             failureUrlService.store(dataConfig, errorName, resolveFailureUrl(target, url, (AtomicBoolean) configMap.get(CRAWL_ALIVE)),
                     target);
             crawlerStatsHelper.record(statsKey, StatsAction.ACCESS_EXCEPTION);
+        } catch (final SlackApiException e) {
+            // Must propagate uncaught, not fall into the generic catch below: the worker task
+            // dispatching this call (see processChannelMessages/processChannelFiles) wraps it in
+            // its own catch (SlackApiException) that forwards to latchFatalError, so storeData
+            // fails the whole crawl instead of reporting a false success. Catching it here as a
+            // plain Throwable would instead record it via FailureUrlService as an ordinary
+            // per-item failure and let the crawl continue -- silently restoring the exact defect
+            // this phase closed. Currently unreachable in practice (nothing this method calls
+            // routes through SlackClient#handleApiError yet -- see the six methods deliberately
+            // left out of that table), but the obvious next step for that table is exactly the
+            // change this guards against, so this is defensive on purpose, not dead code to prune.
+            throw e;
         } catch (final Throwable t) {
             logger.warn("Crawling Access Exception at : {}", dataMap, t);
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
@@ -1118,6 +1130,18 @@ public class SlackDataStore extends AbstractDataStore {
             failureUrlService.store(dataConfig, errorName, resolveFailureUrl(target, url, (AtomicBoolean) configMap.get(CRAWL_ALIVE)),
                     target);
             crawlerStatsHelper.record(statsKey, StatsAction.ACCESS_EXCEPTION);
+        } catch (final SlackApiException e) {
+            // Must propagate uncaught, not fall into the generic catch below: the worker task
+            // dispatching this call (see processChannelMessages/processChannelFiles) wraps it in
+            // its own catch (SlackApiException) that forwards to latchFatalError, so storeData
+            // fails the whole crawl instead of reporting a false success. Catching it here as a
+            // plain Throwable would instead record it via FailureUrlService as an ordinary
+            // per-item failure and let the crawl continue -- silently restoring the exact defect
+            // this phase closed. Currently unreachable in practice (nothing this method calls
+            // routes through SlackClient#handleApiError yet -- see the six methods deliberately
+            // left out of that table), but the obvious next step for that table is exactly the
+            // change this guards against, so this is defensive on purpose, not dead code to prune.
+            throw e;
         } catch (final Throwable t) {
             logger.warn("Crawling Access Exception at : {}", dataMap, t);
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
