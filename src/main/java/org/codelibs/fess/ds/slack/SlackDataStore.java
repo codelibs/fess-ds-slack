@@ -369,6 +369,18 @@ public class SlackDataStore extends AbstractDataStore {
                 }
             }
         } catch (final InterruptedException e) {
+            // Restore the interrupt flag before propagating, matching Request.sleepBeforeRetry's
+            // handling of the same situation: swallowing it here would leave later code on this
+            // thread with no way to observe that an interrupt occurred at all.
+            Thread.currentThread().interrupt();
+            // A fatal error latched by a worker (see latchFatalError) is more actionable than an
+            // interrupt racing it on the main thread -- prefer surfacing that over discarding it
+            // in favor of InterruptedRuntimeException, matching the same preference storeData
+            // applies below via fatalError.get() once the executor shuts down cleanly.
+            final SlackApiException fatalOnInterrupt = fatalError.get();
+            if (fatalOnInterrupt != null) {
+                throw fatalOnInterrupt;
+            }
             throw new InterruptedRuntimeException(e);
         } finally {
             executorService.shutdownNow();
