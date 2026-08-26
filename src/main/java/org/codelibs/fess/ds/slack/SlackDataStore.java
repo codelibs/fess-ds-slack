@@ -116,17 +116,6 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String EXCLUDE_PATTERN = "exclude_pattern";
     /** Parameter name for URL filter configuration. */
     protected static final String URL_FILTER = "url_filter";
-    /**
-     * {@code configMap} key holding this crawl's stop flag, an {@link AtomicBoolean}.
-     *
-     * <p>
-     * Not a user-settable parameter: {@code storeData} puts it there so the per-message and
-     * per-file paths can reach it without adding another argument to six already-long
-     * signatures, the same way {@link #URL_FILTER} carries a resolved component rather than a
-     * setting.
-     * </p>
-     */
-    protected static final String CRAWL_ALIVE = "crawl_alive";
     /** Parameter name for thread pool size. */
     protected static final String NUMBER_OF_THREADS = "number_of_threads";
     /** Parameter name for maximum file size. */
@@ -224,7 +213,6 @@ public class SlackDataStore extends AbstractDataStore {
         // from a worker thread (see resolveFailureUrl, reached from processMessage/processFile
         // via executorService) while this method's own channel walk reads it.
         final AtomicBoolean crawlAlive = new AtomicBoolean(true);
-        configMap.put(CRAWL_ALIVE, crawlAlive);
         try (final SlackClient client = new SlackClient(paramMap)) {
             final Team team = client.getTeam();
             final boolean fileCrawl = (Boolean) configMap.get(FILE_CRAWL);
@@ -235,10 +223,10 @@ public class SlackDataStore extends AbstractDataStore {
                     return;
                 }
                 processChannelMessages(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
-                        channel, fatalError);
+                        channel, fatalError, crawlAlive);
                 if (fileCrawl) {
                     processChannelFiles(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
-                            channel, fatalError);
+                            channel, fatalError, crawlAlive);
                 }
             });
 
@@ -410,18 +398,21 @@ public class SlackDataStore extends AbstractDataStore {
      * @param channel the channel to process
      * @param fatalError latch shared with {@link #storeData} for a fatal {@link SlackApiException}
      *            raised on this method's worker thread (see {@link #latchFatalError})
+     * @param crawlAlive this crawl's stop flag, cleared by {@link #resolveFailureUrl} when a
+     *            failure asks for the crawl to be aborted
      */
     protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
             final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
             final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client, final Team team,
-            final Channel channel, final AtomicReference<SlackApiException> fatalError) {
+            final Channel channel, final AtomicReference<SlackApiException> fatalError, final AtomicBoolean crawlAlive) {
         client.getChannelMessages(channel.getId(), message -> {
             safeExecute(executorService, () -> {
                 try {
-                    processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+                    processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message,
+                            crawlAlive);
                     if (isThreadParent(message)) {
                         processMessageReplies(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel,
-                                message);
+                                message, crawlAlive);
                     }
                 } catch (final SlackApiException e) {
                     latchFatalError(executorService, fatalError, e);
@@ -511,11 +502,12 @@ public class SlackDataStore extends AbstractDataStore {
     protected void processChannelFiles(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel,
-            final AtomicReference<SlackApiException> fatalError) {
+            final AtomicReference<SlackApiException> fatalError, final AtomicBoolean crawlAlive) {
         client.getChannelFiles(channel.getId(), file -> {
             safeExecute(executorService, () -> {
                 try {
-                    processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, file);
+                    processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, file,
+                            crawlAlive);
                 } catch (final SlackApiException e) {
                     latchFatalError(executorService, fatalError, e);
                 }
@@ -540,9 +532,10 @@ public class SlackDataStore extends AbstractDataStore {
     protected void processMessageReplies(final DataConfig dataConfig, final IndexUpdateCallback callback,
             final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
             final Map<String, Object> defaultDataMap, final SlackClient client, final Team team, final Channel channel,
-            final Message parentMessage) {
+            final Message parentMessage, final AtomicBoolean crawlAlive) {
         client.getMessageReplies(channel.getId(), parentMessage.getThreadTs(), message -> {
-            processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+            processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message,
+                    crawlAlive);
         });
     }
 
@@ -626,10 +619,12 @@ public class SlackDataStore extends AbstractDataStore {
      * @param team the team information
      * @param channel the channel containing the message
      * @param message the message to process
+     * @param crawlAlive this crawl's stop flag, cleared by {@link #resolveFailureUrl} when a
+     *            failure asks for the crawl to be aborted
      */
     protected void processMessage(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-            final SlackClient client, final Team team, final Channel channel, final Message message) {
+            final SlackClient client, final Team team, final Channel channel, final Message message, final AtomicBoolean crawlAlive) {
         final CrawlerStatsHelper crawlerStatsHelper = ComponentUtil.getCrawlerStatsHelper();
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         // getMessagePermalink is resolved outside the main try/catch below because
@@ -723,8 +718,7 @@ public class SlackDataStore extends AbstractDataStore {
             }
 
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
-            failureUrlService.store(dataConfig, errorName, resolveFailureUrl(target, url, (AtomicBoolean) configMap.get(CRAWL_ALIVE)),
-                    target);
+            failureUrlService.store(dataConfig, errorName, resolveFailureUrl(target, url, crawlAlive), target);
             crawlerStatsHelper.record(statsKey, StatsAction.ACCESS_EXCEPTION);
         } catch (final Throwable t) {
             logger.warn("Crawling Access Exception at : {}", dataMap, t);
@@ -749,10 +743,12 @@ public class SlackDataStore extends AbstractDataStore {
      * @param team the team information
      * @param channel the channel containing the file
      * @param file the file to process
+     * @param crawlAlive this crawl's stop flag, cleared by {@link #resolveFailureUrl} when a
+     *            failure asks for the crawl to be aborted
      */
     protected void processFile(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-            final SlackClient client, final Team team, final Channel channel, final File file) {
+            final SlackClient client, final Team team, final Channel channel, final File file, final AtomicBoolean crawlAlive) {
         final CrawlerStatsHelper crawlerStatsHelper = ComponentUtil.getCrawlerStatsHelper();
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         final String url = file.getPermalink();
@@ -849,8 +845,7 @@ public class SlackDataStore extends AbstractDataStore {
             }
 
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
-            failureUrlService.store(dataConfig, errorName, resolveFailureUrl(target, url, (AtomicBoolean) configMap.get(CRAWL_ALIVE)),
-                    target);
+            failureUrlService.store(dataConfig, errorName, resolveFailureUrl(target, url, crawlAlive), target);
             crawlerStatsHelper.record(statsKey, StatsAction.ACCESS_EXCEPTION);
         } catch (final Throwable t) {
             logger.warn("Crawling Access Exception at : {}", dataMap, t);
