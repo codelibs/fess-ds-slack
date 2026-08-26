@@ -589,12 +589,13 @@ public class SlackDataStore extends AbstractDataStore {
      * Chosen over letting the backlog drain naturally: once the token itself is no longer valid,
      * every other queued or future {@code conversations.replies} call is going to fail the exact
      * same way, so continuing to run them only delays reporting a failure the crawl already knows
-     * about. {@link #safeExecute} is what keeps this safe for the caller -- {@code
-     * client.getChannels}/{@code getChannelMessages}/{@code getChannelFiles} keep walking and
-     * dispatching on the calling thread after this runs, and a plain {@code execute} call on an
-     * already-shut-down executor throws {@link RejectedExecutionException}, which would otherwise
-     * surface as the crawl's reported failure instead of the {@link SlackApiException} latched
-     * here.
+     * about. What keeps this safe for the caller -- {@code client.getChannels}/{@code
+     * getChannelMessages}/{@code getChannelFiles} keep walking and dispatching on the calling
+     * thread after this runs -- is this executor's {@link ThreadPoolExecutor.CallerRunsPolicy}
+     * (see {@link #newFixedThreadPool}): once shut down, that policy silently drops a submitted
+     * task instead of running or rejecting it, so nothing thrown here could ever mask the
+     * {@link SlackApiException} latched. See {@link #safeExecute} for why its own catch of
+     * {@link RejectedExecutionException} is not what provides that safety.
      * </p>
      *
      * @param executorService the executor to shut down
@@ -611,11 +612,22 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
-     * Submits {@code task} to {@code executorService}, discarding it silently if the executor has
-     * already been shut down (see {@link #latchFatalError}) instead of letting
-     * {@link RejectedExecutionException} propagate to the caller -- typically
-     * {@link SlackClient}'s paging loop, one channel/message/file at a time, which is not
-     * prepared to handle it and would otherwise mask the crawl's real, already-latched failure.
+     * Submits {@code task} to {@code executorService}, catching {@link RejectedExecutionException}
+     * as defence against a future change to this class's rejection policy, not behaviour this
+     * executor actually exhibits today.
+     *
+     * <p>
+     * {@link #newFixedThreadPool} builds this executor with {@link ThreadPoolExecutor.CallerRunsPolicy}.
+     * Once the executor is shut down (see {@link #latchFatalError}), that policy's {@code
+     * rejectedExecution} silently drops the task instead of running or throwing -- verified
+     * empirically against this class's own executor, not merely assumed from the policy's name --
+     * so in this class the catch below has no observable effect: a submission after shutdown is
+     * discarded by the policy before {@link ExecutorService#execute} could ever throw. It is kept
+     * as a guard for if that construction ever changes to a throwing policy (e.g. {@code
+     * AbortPolicy}), in which case a rejected submission -- typically from {@link SlackClient}'s
+     * paging loop, one channel/message/file at a time, which is not prepared to handle it -- would
+     * otherwise mask the crawl's real, already-latched failure.
+     * </p>
      *
      * @param executorService the executor to submit to
      * @param task the task to run
