@@ -26,8 +26,9 @@ import org.junit.jupiter.api.TestInfo;
  * {@code retry_interval} all promise. Every other test in this module passes a valid numeric
  * string for these parameters, so nothing else exercises the catch blocks -- a swallowed
  * exception or a broken catch would otherwise ship silently. Also covers the negative-value
- * clamp {@code retry_interval} needs on top of that, since a negative value is numeric and
- * would otherwise reach {@code Thread.sleep} and throw.
+ * clamp that all three of {@code retry_interval}, {@code connection_timeout}, and
+ * {@code read_timeout} need on top of that, since a negative value is numeric and each has its
+ * own way of turning that into a stalled or dead crawl instead of a clean fallback.
  */
 public class SlackClientParameterFallbackTest extends UnitDsTestCase {
 
@@ -88,5 +89,26 @@ public class SlackClientParameterFallbackTest extends UnitDsTestCase {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("retry_interval", "-1");
         assertEquals(RequestContext.DEFAULT_RETRY_INTERVAL, client.getRetryInterval(paramMap));
+    }
+
+    /**
+     * curl4j treats a negative timeout as "unset" and reverts to the JDK's blocking-forever
+     * default -- silently restoring the exact stall {@code connection_timeout} exists to
+     * prevent. It does not throw, unlike a negative {@code retry_interval} reaching
+     * {@code Thread.sleep}, so nothing but an explicit clamp catches this.
+     */
+    @Test
+    public void test_connectionTimeout_negativeFallsBackToDefault() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("connection_timeout", "-1");
+        assertEquals(RequestContext.DEFAULT_CONNECTION_TIMEOUT, client.getConnectionTimeout(paramMap));
+    }
+
+    /** See {@link #test_connectionTimeout_negativeFallsBackToDefault} -- same failure mode. */
+    @Test
+    public void test_readTimeout_negativeFallsBackToDefault() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("read_timeout", "-1");
+        assertEquals(RequestContext.DEFAULT_READ_TIMEOUT, client.getReadTimeout(paramMap));
     }
 }
