@@ -141,6 +141,8 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final int DEFAULT_EXECUTOR_TIMEOUT = 60;
     /** Parameter name for excluding Slack-generated channel-administration messages. */
     protected static final String IGNORE_SYSTEM_EVENTS = "ignore_system_events";
+    /** Parameter name for the delay, in milliseconds, to sleep after each processed message/file. */
+    protected static final String READ_INTERVAL = "read_interval";
 
     /**
      * Message {@code subtype} values that are Slack-generated channel-administration
@@ -231,6 +233,7 @@ public class SlackDataStore extends AbstractDataStore {
         configMap.put(SUPPORTED_MIMETYPES, getSupportedMimeTypes(paramMap));
         configMap.put(FILE_CRAWL, isFileCrawl(paramMap));
         configMap.put(IGNORE_SYSTEM_EVENTS, isIgnoreSystemEvents(paramMap));
+        configMap.put(READ_INTERVAL, getReadInterval(paramMap));
         configMap.put(URL_FILTER, getUrlFilter(paramMap));
         if (logger.isDebugEnabled()) {
             logger.debug("configMap: {}", configMap);
@@ -431,6 +434,37 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Extracts, in milliseconds, how long {@link #processChannelMessages} and
+     * {@link #processChannelFiles} should {@link #sleep} after each processed message or file,
+     * to pace a crawl against a rate-limited workspace.
+     *
+     * <p>
+     * Overrides {@link AbstractDataStore#getReadInterval}, which reads the hardcoded key {@code
+     * "readInterval"} -- camelCase, unlike every other parameter this plugin defines ({@code
+     * token}, {@code include_private}, {@code connection_timeout}, {@code exclude_archived},
+     * ...). Reading that key as-is would silently accept a parameter name this plugin's own
+     * naming convention, and the design this parameter shipped under, never document, so this
+     * reads {@link #READ_INTERVAL} instead. {@link #sleep} itself is not overridden.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the interval in milliseconds, or 0 if unset or not a number
+     */
+    @Override
+    protected long getReadInterval(final DataStoreParams paramMap) {
+        final String value = paramMap.getAsString(READ_INTERVAL);
+        if (StringUtil.isBlank(value)) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (final NumberFormatException e) {
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to 0.", READ_INTERVAL, value);
+            return 0L;
+        }
+    }
+
+    /**
      * Creates and configures a URL filter based on include/exclude patterns.
      *
      * @param paramMap the configuration parameters
@@ -482,7 +516,13 @@ public class SlackDataStore extends AbstractDataStore {
      * dispatched to {@code executorService}, when {@link #isIgnoreSystemEvents} is on: it is
      * never threadable (see {@code SlackClient#handleApiError}'s {@code thread_not_found}
      * handling), so skipping it here also avoids a wasted {@code chat.getPermalink} call that
-     * {@link #processMessage} would otherwise make to resolve its URL.
+     * {@link #processMessage} would otherwise make to resolve its URL. A dropped message does
+     * not count toward {@code read_interval} pacing below, since nothing was dispatched for it.
+     * </p>
+     *
+     * <p>
+     * Sleeps for {@code read_interval} milliseconds (see {@link #getReadInterval}) after each
+     * message actually dispatched, to pace the crawl against a rate-limited workspace.
      * </p>
      *
      * @param dataConfig the data configuration
@@ -503,6 +543,7 @@ public class SlackDataStore extends AbstractDataStore {
             final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client, final Team team,
             final Channel channel, final AtomicReference<SlackApiException> fatalError) {
         final boolean ignoreSystemEvents = (Boolean) configMap.get(IGNORE_SYSTEM_EVENTS);
+        final long readInterval = (Long) configMap.get(READ_INTERVAL);
         client.getChannelMessages(channel.getId(), message -> {
             if (ignoreSystemEvents && isSystemEventMessage(message)) {
                 if (logger.isDebugEnabled()) {
@@ -521,6 +562,9 @@ public class SlackDataStore extends AbstractDataStore {
                     latchFatalError(executorService, fatalError, e);
                 }
             });
+            if (readInterval > 0) {
+                sleep(readInterval);
+            }
         });
     }
 
@@ -589,6 +633,11 @@ public class SlackDataStore extends AbstractDataStore {
     /**
      * Processes all files in a channel for indexing.
      *
+     * <p>
+     * Sleeps for {@code read_interval} milliseconds (see {@link #getReadInterval}) after each
+     * file, to pace the crawl against a rate-limited workspace.
+     * </p>
+     *
      * @param dataConfig the data configuration
      * @param callback the index update callback
      * @param configMap the configuration map
@@ -606,6 +655,7 @@ public class SlackDataStore extends AbstractDataStore {
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel,
             final AtomicReference<SlackApiException> fatalError) {
+        final long readInterval = (Long) configMap.get(READ_INTERVAL);
         client.getChannelFiles(channel.getId(), file -> {
             safeExecute(executorService, () -> {
                 try {
@@ -614,6 +664,9 @@ public class SlackDataStore extends AbstractDataStore {
                     latchFatalError(executorService, fatalError, e);
                 }
             });
+            if (readInterval > 0) {
+                sleep(readInterval);
+            }
         });
     }
 
