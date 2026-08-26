@@ -225,13 +225,20 @@ public class SlackDataStore extends AbstractDataStore {
         // via executorService) while this method's own channel walk reads it.
         final AtomicBoolean crawlAlive = new AtomicBoolean(true);
         configMap.put(CRAWL_ALIVE, crawlAlive);
-        try (final SlackClient client = new SlackClient(paramMap)) {
+        // A supplier over both flags rather than a one-time snapshot, so a stop that lands after
+        // this client is constructed is still seen by every paging loop SlackClient runs
+        // afterward. The two are different stops and both must be honoured: `alive` is the
+        // operator's admin-UI stop button (set by DataIndexHelper on the shared singleton, and
+        // never reset), crawlAlive is this crawl's own abort.
+        try (final SlackClient client = new SlackClient(paramMap, () -> alive && crawlAlive.get())) {
             final Team team = client.getTeam();
             final boolean fileCrawl = (Boolean) configMap.get(FILE_CRAWL);
             client.getChannels(channel -> {
-                // Checked before dispatching the next channel, so an abort skips channels that
-                // have not been started yet rather than only cutting short the one in progress.
-                if (!crawlAlive.get()) {
+                // Checked here, not only inside SlackClient's paging loops: this is the loop that
+                // decides whether to dispatch the *next* channel at all, so stopping here skips
+                // channels that have not been started yet instead of only cutting short the one
+                // already in progress.
+                if (!alive || !crawlAlive.get()) {
                     return;
                 }
                 processChannelMessages(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
@@ -269,6 +276,15 @@ public class SlackDataStore extends AbstractDataStore {
             throw new InterruptedRuntimeException(e);
         } finally {
             executorService.shutdownNow();
+        }
+
+        // Checked after the executor has been shut down and awaited above, so this reports the
+        // final state of the crawl rather than a state that could still change. Skipped when a
+        // fatal error was also latched: that is thrown below and is the more actionable of the
+        // two for an operator to see.
+        if (!alive && fatalError.get() == null) {
+            logger.info("Slack crawl for \"{}\" was stopped before completing; the index may contain fewer documents than a full crawl.",
+                    dataConfig.getName());
         }
 
         // Re-thrown after the executor has been shut down and awaited above. On the normal path
