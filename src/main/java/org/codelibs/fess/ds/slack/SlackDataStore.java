@@ -625,7 +625,7 @@ public class SlackDataStore extends AbstractDataStore {
                                 message);
                     }
                 } catch (final SlackApiException e) {
-                    latchFatalError(executorService, fatalError, e);
+                    latchFatalError(executorService, fatalError, (AtomicBoolean) configMap.get(CRAWL_ALIVE), e);
                 }
             });
             if (readInterval > 0) {
@@ -648,8 +648,8 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
-     * Records the first fatal Slack API error seen by any worker thread and shuts the executor
-     * down immediately.
+     * Records the first fatal Slack API error seen by any worker thread, shuts the executor down
+     * immediately, and stops this data store.
      *
      * <p>
      * Chosen over letting the backlog drain naturally: once the token itself is no longer valid,
@@ -664,16 +664,56 @@ public class SlackDataStore extends AbstractDataStore {
      * {@link RejectedExecutionException} is not what provides that safety.
      * </p>
      *
+     * <p>
+     * <b>Clearing this crawl's stop flag closes the gap {@code shutdownNow()} alone left
+     * open.</b> A
+     * fatal error is discovered on a worker thread -- {@code conversations.replies}, dispatched
+     * from {@link #processChannelMessages} -- but {@code client.getChannels}/{@code
+     * getChannelMessages}/{@code getChannelFiles} keep walking and dispatching on the *main*
+     * thread regardless, one page and one {@code read_interval} sleep at a time, until every
+     * remaining channel and message has been silently discarded by the shut-down executor before
+     * {@link #storeData} finally reports the failure. {@code invalid_auth} and the rest of
+     * {@link SlackClient#FATAL_ERROR_CODES} self-correct within roughly a page, because the very
+     * next main-thread call fails the same way and throws directly. {@code missing_scope} does
+     * not self-correct: it is scoped per Slack Web API *method*, so a token missing only the
+     * scope conversations.replies needs keeps succeeding on every main-thread
+     * conversations.history call indefinitely while only the reply-fetching worker latches.
+     * Clearing {@code crawlAlive} stops that walk: {@link #storeData}'s channel-dispatch loop
+     * already checks it before dispatching the *next* channel, alongside the operator's admin-UI
+     * stop, so the two compose. {@link #storeData}'s own post-walk check tolerates the crawl
+     * having been stopped at the same time as a latched {@code fatalError} -- it skips the
+     * "stopped early" info log and lets the more actionable exception take over -- because that
+     * is precisely the state this method produces.
+     * </p>
+     *
+     * <p>
+     * Deliberately <em>not</em> {@link #stop()}. That flips the inherited
+     * {@link org.codelibs.fess.ds.AbstractDataStore#alive} flag, which Fess assigns {@code true}
+     * exactly once, at field initialisation, and never resets. A data store is a LastaDi
+     * singleton reused by every crawl for the lifetime of the JVM, so latching a fatal error
+     * that way would leave every subsequent crawl of every Slack {@code DataConfig} walking zero
+     * channels, indexing nothing, and still reporting success -- until Fess is restarted. One
+     * rate-limited {@code conversations.replies} that exhausts its retries is enough to trigger
+     * it. The already-indexed documents survive -- {@code AbstractDataStore} stamps {@code
+     * expires} on every one of them whenever {@code day.for.cleanup} is non-negative (it
+     * defaults to 3), and {@code DataIndexHelper.deleteOldDocs} excludes documents that carry it
+     * -- so the failure mode is a silently stale index rather than a deleted one, reported to
+     * the operator as a successful crawl.
+     * </p>
+     *
      * @param executorService the executor to shut down
      * @param fatalError the latch shared with {@link #storeData}; only the first error is kept, since a
      *            second worker hitting this almost certainly means the same fatal condition, not
      *            new information
+     * @param crawlAlive this crawl's stop flag, cleared so the main-thread channel walk stops
+     *            dispatching
      * @param e the fatal error just caught
      */
     protected void latchFatalError(final ExecutorService executorService, final AtomicReference<SlackApiException> fatalError,
-            final SlackApiException e) {
+            final AtomicBoolean crawlAlive, final SlackApiException e) {
         if (fatalError.compareAndSet(null, e)) {
             executorService.shutdownNow();
+            crawlAlive.set(false);
         }
     }
 
@@ -739,7 +779,7 @@ public class SlackDataStore extends AbstractDataStore {
                 try {
                     processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, file);
                 } catch (final SlackApiException e) {
-                    latchFatalError(executorService, fatalError, e);
+                    latchFatalError(executorService, fatalError, (AtomicBoolean) configMap.get(CRAWL_ALIVE), e);
                 }
             });
             if (readInterval > 0) {
