@@ -101,6 +101,10 @@ public class SlackClient implements Closeable {
     protected static final String PROXY_HOST_PARAM = "proxy_host";
     /** Parameter name for proxy port configuration. */
     protected static final String PROXY_PORT_PARAM = "proxy_port";
+    /** Parameter name for connection timeout configuration. */
+    protected static final String CONNECTION_TIMEOUT_PARAM = "connection_timeout";
+    /** Parameter name for read timeout configuration. */
+    protected static final String READ_TIMEOUT_PARAM = "read_timeout";
     /** Parameter name for file type filtering. */
     protected static final String FILE_TYPES_PARAM = "file_types";
 
@@ -121,6 +125,10 @@ public class SlackClient implements Closeable {
     protected static final String DEFAULT_FILE_COUNT = "20";
     /** Default cache size for all caches. */
     protected static final String DEFAULT_CACHE_SIZE = "10000";
+    /** Default connection timeout in milliseconds. */
+    protected static final int DEFAULT_CONNECTION_TIMEOUT = 20000;
+    /** Default read timeout in milliseconds. */
+    protected static final int DEFAULT_READ_TIMEOUT = 20000;
 
     /** Whether to include private channels in operations. */
     protected final Boolean includePrivate;
@@ -168,6 +176,8 @@ public class SlackClient implements Closeable {
                 throw new SlackDataStoreException("parameter " + "'" + PROXY_PORT_PARAM + "' invalid.", e);
             }
         }
+
+        requestContext.setTimeouts(getConnectionTimeout(paramMap), getReadTimeout(paramMap));
 
         usersCache = CacheBuilder.newBuilder()
                 // Each user is cached under both its ID and its name (see the preload
@@ -369,6 +379,49 @@ public class SlackClient implements Closeable {
     }
 
     /**
+     * Extracts the connection timeout from the configuration parameters.
+     *
+     * <p>
+     * A non-numeric value falls back to {@link #DEFAULT_CONNECTION_TIMEOUT}
+     * with a warning rather than failing the crawl.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the connection timeout in milliseconds
+     */
+    protected int getConnectionTimeout(final DataStoreParams paramMap) {
+        final String value = paramMap.getAsString(CONNECTION_TIMEOUT_PARAM);
+        try {
+            return StringUtil.isNotBlank(value) ? Integer.parseInt(value) : DEFAULT_CONNECTION_TIMEOUT;
+        } catch (final NumberFormatException e) {
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", CONNECTION_TIMEOUT_PARAM, value,
+                    DEFAULT_CONNECTION_TIMEOUT);
+            return DEFAULT_CONNECTION_TIMEOUT;
+        }
+    }
+
+    /**
+     * Extracts the read timeout from the configuration parameters.
+     *
+     * <p>
+     * A non-numeric value falls back to {@link #DEFAULT_READ_TIMEOUT} with a
+     * warning rather than failing the crawl.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the read timeout in milliseconds
+     */
+    protected int getReadTimeout(final DataStoreParams paramMap) {
+        final String value = paramMap.getAsString(READ_TIMEOUT_PARAM);
+        try {
+            return StringUtil.isNotBlank(value) ? Integer.parseInt(value) : DEFAULT_READ_TIMEOUT;
+        } catch (final NumberFormatException e) {
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", READ_TIMEOUT_PARAM, value, DEFAULT_READ_TIMEOUT);
+            return DEFAULT_READ_TIMEOUT;
+        }
+    }
+
+    /**
      * Returns the channel types to include based on configuration.
      *
      * @return comma-separated list of channel types to include
@@ -456,11 +509,14 @@ public class SlackClient implements Closeable {
      * Downloads a file from Slack using authenticated HTTP request.
      *
      * <p>
-     * Honours the configured HTTP proxy, matching the API request path in
+     * Honours the configured HTTP proxy and connection/read timeouts,
+     * matching the API request path in
      * {@link org.codelibs.fess.ds.slack.api.Request#getCurlRequest}: without
-     * it, every download attempted a direct connection in a proxied
+     * the proxy, every download attempted a direct connection in a proxied
      * environment and failed, and with {@code ignore_error} defaulting to
-     * true the file was indexed with empty content instead.
+     * true the file was indexed with empty content instead. Without the
+     * timeouts, a file download that stalls mid-transfer would block a
+     * crawler thread indefinitely, same as an unbounded API call.
      * </p>
      *
      * @param fileUrl the URL of the file to download
@@ -472,6 +528,7 @@ public class SlackClient implements Closeable {
         if (httpProxy != null) {
             request.proxy(httpProxy);
         }
+        request.timeout(requestContext.getConnectionTimeout(), requestContext.getReadTimeout());
         return request.execute();
     }
 

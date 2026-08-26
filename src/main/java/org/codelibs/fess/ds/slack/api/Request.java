@@ -172,7 +172,8 @@ public abstract class Request<T extends Response> {
 
     /**
      * Creates a configured HTTP request for the specified API method and path.
-     * Automatically adds the authentication header and proxy configuration from the request context.
+     * Automatically adds the authentication header, proxy configuration, and
+     * connection/read timeouts from the request context.
      *
      * @param method the HTTP method function (GET, POST, PUT, DELETE)
      * @param path the API endpoint path to append to the base URL
@@ -189,6 +190,7 @@ public abstract class Request<T extends Response> {
         if (httpProxy != null) {
             request.proxy(httpProxy);
         }
+        request.timeout(requestContext.getConnectionTimeout(), requestContext.getReadTimeout());
         return request;
     }
 }

@@ -20,17 +20,29 @@ import java.net.Proxy;
 
 /**
  * Holds the per-client request configuration for Slack API calls: OAuth
- * credentials, proxy settings, and (in later revisions) connection and
- * retry behaviour. It carries more than authentication, so it lives under
- * a name that does not imply otherwise.
+ * credentials, proxy settings, and connection/read timeouts. It carries more
+ * than authentication, so it lives under a name that does not imply
+ * otherwise.
  */
 public class RequestContext {
+
+    /** Default connection timeout in milliseconds. */
+    protected static final int DEFAULT_CONNECTION_TIMEOUT = 20000;
+
+    /** Default read timeout in milliseconds. */
+    protected static final int DEFAULT_READ_TIMEOUT = 20000;
 
     /** OAuth access token for Slack API access. */
     protected String token;
 
     /** HTTP proxy configuration for API requests. */
     protected Proxy httpProxy;
+
+    /** Connection timeout in milliseconds. */
+    protected int connectionTimeout = DEFAULT_CONNECTION_TIMEOUT;
+
+    /** Read timeout in milliseconds. */
+    protected int readTimeout = DEFAULT_READ_TIMEOUT;
 
     /**
      * Creates a new RequestContext instance with the specified OAuth token.
@@ -67,6 +79,35 @@ public class RequestContext {
      */
     public Proxy getHttpProxy() {
         return httpProxy;
+    }
+
+    /**
+     * Returns the connection timeout.
+     *
+     * @return the connection timeout in milliseconds
+     */
+    public int getConnectionTimeout() {
+        return connectionTimeout;
+    }
+
+    /**
+     * Returns the read timeout.
+     *
+     * @return the read timeout in milliseconds
+     */
+    public int getReadTimeout() {
+        return readTimeout;
+    }
+
+    /**
+     * Configures the connection and read timeouts for API requests.
+     *
+     * @param connectionTimeout the connection timeout in milliseconds
+     * @param readTimeout the read timeout in milliseconds
+     */
+    public void setTimeouts(final int connectionTimeout, final int readTimeout) {
+        this.connectionTimeout = connectionTimeout;
+        this.readTimeout = readTimeout;
     }
 
 }
