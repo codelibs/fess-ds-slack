@@ -93,4 +93,47 @@ public class RequestRetryTest extends UnitDsTestCase {
         server.newClient(paramMap).teamInfo().execute();
         assertEquals(1, server.getRequestCount("/api/team.info"));
     }
+
+    /**
+     * Covers the Critical finding's second layer: once every attempt is exhausted, {@code
+     * execute} must not silently hand back an ordinary-looking body -- it must flag the response
+     * via {@link org.codelibs.fess.ds.slack.api.Response#retriesExhausted()} so {@code
+     * SlackClient} can tell "we gave up" from "Slack said no".
+     */
+    @Test
+    public void test_exhaustedRetries_marksResponseAsRetriesExhausted() {
+        server.enqueue("/api/team.info", SlackApiMockServer.rateLimited(0));
+
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-test");
+        paramMap.put("max_retry_count", "0");
+        final TeamInfoResponse response = server.newClient(paramMap).teamInfo().execute();
+
+        assertTrue("a response returned only because retries were exhausted must be flagged", response.retriesExhausted());
+        assertEquals(1, server.getRequestCount("/api/team.info"));
+    }
+
+    /** A retry that succeeds within budget must not be flagged as exhausted. */
+    @Test
+    public void test_successfulRetry_doesNotMarkRetriesExhausted() {
+        server.enqueue("/api/team.info", SlackApiMockServer.rateLimited(0));
+        server.enqueue("/api/team.info", SlackApiMockServer.json("{\"ok\":true,\"team\":{\"id\":\"T1\"}}"));
+
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-test");
+        paramMap.put("retry_interval", "10");
+        final TeamInfoResponse response = server.newClient(paramMap).teamInfo().execute();
+
+        assertFalse("a response answered within the retry budget must not be flagged", response.retriesExhausted());
+    }
+
+    /** An ordinary, never-retried 200 must not be flagged as exhausted either. */
+    @Test
+    public void test_nonRetryableResponse_doesNotMarkRetriesExhausted() {
+        server.enqueue("/api/team.info", SlackApiMockServer.json("{\"ok\":false,\"error\":\"channel_not_found\"}"));
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-test");
+        final TeamInfoResponse response = server.newClient(paramMap).teamInfo().execute();
+        assertFalse(response.retriesExhausted());
+    }
 }

@@ -179,6 +179,19 @@ public abstract class Request<T extends Response> {
      * judgement that belongs to {@code SlackClient}, not this layer.
      * </p>
      *
+     * <p>
+     * <b>Retry exhaustion is signalled on the returned response, not silently absorbed here.</b>
+     * When the final attempt still lands on a retryable status, this parses that attempt's body
+     * exactly like any other response but also marks it via {@link Response#retriesExhausted()}.
+     * Without that flag, a caller has no way to tell "Slack answered {@code ok:false} on the
+     * first try" from "every attempt failed and we gave up" -- both would otherwise look like an
+     * ordinary parsed body, and Slack's 429 body in particular ({@code
+     * {"ok":false,"error":"ratelimited"}}) has no error code of its own that says "I was
+     * retried". {@code SlackClient.handleApiError} reads this flag to fail the crawl on
+     * exhaustion regardless of the specific error code, rather than silently skipping a channel
+     * or page as if the failure were a normal, permanent {@code ok:false} outcome.
+     * </p>
+     *
      * @param request the prepared request
      * @param valueType the response class
      * @return the parsed response
@@ -189,9 +202,14 @@ public abstract class Request<T extends Response> {
         for (int attempt = 0;; attempt++) {
             try (final CurlResponse response = request.execute()) {
                 final int status = response.getHttpStatusCode();
-                if (isRetryableStatus(status) && attempt < maxRetryCount) {
-                    sleepBeforeRetry(response, attempt + 1, status);
-                    continue;
+                if (isRetryableStatus(status)) {
+                    if (attempt < maxRetryCount) {
+                        sleepBeforeRetry(response, attempt + 1, status);
+                        continue;
+                    }
+                    logger.warn("Exhausted {} {} on a Slack API request; the last response was HTTP {}.", maxRetryCount,
+                            maxRetryCount == 1 ? "retry" : "retries", status);
+                    return parseResponse(response.getContentAsString(), valueType).retriesExhausted(true);
                 }
                 return parseResponse(response.getContentAsString(), valueType);
             } catch (final IOException e) {

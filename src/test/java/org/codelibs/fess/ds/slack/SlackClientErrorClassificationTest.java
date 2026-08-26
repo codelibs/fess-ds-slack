@@ -22,6 +22,7 @@ import org.apache.logging.log4j.Level;
 import org.codelibs.fess.ds.slack.api.SlackApiException;
 import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.User;
+import org.codelibs.fess.entity.DataStoreParams;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
@@ -70,6 +71,46 @@ public class SlackClientErrorClassificationTest extends UnitDsTestCase {
             assertEquals("errorCode for " + code, code, exception.getErrorCode());
             assertEquals("method for " + code, "users.list", exception.getMethod());
         }
+    }
+
+    // ---- Transient: the Critical fix's bucket, exercised once against users.list ----
+
+    /**
+     * Covers the Critical finding's first layer: {@code ratelimited}, {@code internal_error},
+     * {@code fatal_error}, {@code service_unavailable}, and {@code request_timeout} are not
+     * per-channel conditions and must fail the crawl, not be warned-and-skipped like {@code
+     * channel_not_found}. Exercised on a plain HTTP 200 body -- not a retried 429/5xx -- since
+     * {@code internal_error}/{@code fatal_error}/{@code service_unavailable} are documented to
+     * also arrive that way, independently of retry exhaustion.
+     */
+    @Test
+    public void test_transientErrorCodes_throwSlackApiException() {
+        final String[] transientCodes = { "ratelimited", "internal_error", "fatal_error", "service_unavailable", "request_timeout" };
+        for (final String code : transientCodes) {
+            server.enqueue("/api/users.list", SlackApiMockServer.json("{\"ok\":false,\"error\":\"" + code + "\"}"));
+            final SlackApiException exception = Assertions.assertThrows(SlackApiException.class, () -> client.getUsers(u -> {}));
+            assertEquals("errorCode for " + code, code, exception.getErrorCode());
+            assertEquals("method for " + code, "users.list", exception.getMethod());
+        }
+    }
+
+    /**
+     * Covers the Critical finding's second layer: a response marked {@code retriesExhausted()}
+     * must fail the crawl even when its error code (or lack of one) is not itself recognized,
+     * because giving up after every retry is never a per-channel condition regardless of what
+     * the last attempt's body happened to say.
+     */
+    @Test
+    public void test_retriesExhausted_throwsEvenWithoutARecognizedErrorCode() {
+        server.enqueue("/api/users.list", SlackApiMockServer.status(500, "{\"ok\":false}"));
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-retry-exhausted");
+        paramMap.put("max_retry_count", "0");
+
+        final SlackApiException exception = Assertions.assertThrows(SlackApiException.class, () -> server.newClient(paramMap));
+
+        assertEquals("users.list", exception.getMethod());
+        assertEquals(SlackClient.RETRIES_EXHAUSTED_ERROR_CODE, exception.getErrorCode());
     }
 
     // ---- Fatal: wiring confirmation for the other four call sites ----

@@ -36,6 +36,15 @@ public abstract class Response {
     protected String error;
     /** Raw response body from the API. */
     protected String responseBody;
+    /**
+     * Whether this response was returned only because {@code Request.execute} exhausted its
+     * retries against a persistently retryable (429/5xx) HTTP status, as opposed to Slack
+     * answering with this body on the first attempt. Never populated from JSON -- there is no
+     * such field in a Slack API response -- only ever set by {@code Request.execute} itself, so
+     * {@code SlackClient.handleApiError} can distinguish "we gave up after N attempts" from
+     * "Slack said no", a distinction the parsed {@code ok}/{@code error} body alone cannot make.
+     */
+    protected boolean retriesExhausted;
 
     /**
      * Returns whether the API request was successful.
@@ -82,6 +91,29 @@ public abstract class Response {
      */
     public <T extends Response> T responseBody(final String responseBody) {
         this.responseBody = responseBody;
+        return (T) this;
+    }
+
+    /**
+     * Returns whether this response was returned only because retries were exhausted. See
+     * {@link #retriesExhausted} for what this does and does not mean.
+     *
+     * @return true if {@code Request.execute} gave up retrying rather than Slack answering ok
+     */
+    public boolean retriesExhausted() {
+        return retriesExhausted;
+    }
+
+    /**
+     * Sets whether this response was returned only because retries were exhausted, and returns
+     * this response instance. Mirrors {@link #responseBody(String)}'s chaining shape.
+     *
+     * @param retriesExhausted the value to set
+     * @param <T> the specific response type
+     * @return this response instance for method chaining
+     */
+    public <T extends Response> T retriesExhausted(final boolean retriesExhausted) {
+        this.retriesExhausted = retriesExhausted;
         return (T) this;
     }
 
