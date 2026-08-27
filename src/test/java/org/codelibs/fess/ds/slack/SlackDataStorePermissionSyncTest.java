@@ -243,17 +243,28 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
     }
 
     /**
-     * CRITICAL (whole-branch review, Phase 3): {@code permission_sync}'s computed roles reach the
-     * indexed document only through an explicit {@code role=message.roles} script mapping (see
-     * {@code PERMISSION_SYNC}'s javadoc) -- a script that never references {@code message.roles},
-     * such as the README's own pre-fix example (title/digest/content/created/timestamp/url), pins
-     * the per-channel member roles right where {@code storeData} computed them, then never applies
+     * CRITICAL (whole-branch review, Phase 3): documents, but does not pin as a regression, the
+     * by-design coupling that {@code permission_sync}'s computed roles reach the indexed document
+     * only through an explicit {@code role=message.roles} script mapping (see {@code
+     * PERMISSION_SYNC}'s javadoc) -- a script that never references {@code message.roles}, such as
+     * the README's own pre-fix example (title/digest/content/created/timestamp/url), pins the
+     * per-channel member roles right where {@code storeData} computed them, then never applies
      * them: only the DataConfig-level permission already carried on {@code defaultDataMap} --
      * copied into {@code dataMap} verbatim before any script runs -- survives into the indexed
      * "role" field.
+     *
+     * <p>
+     * <b>This assertion passes identically against the pre-fix code (round-2 re-review finding):
+     * roles only ever reached the document through {@code scriptMap}, and commit 15a342e did not
+     * change that path</b> -- it added documentation, javadoc, and the startup warning tested
+     * separately by {@link #test_warnsWhenPermissionSyncEnabledButNoScriptReferencesMessageRoles}
+     * and {@link #test_noWarningWhenAScriptReferencesMessageRoles}. Nothing here can regress in
+     * the direction this method's name used to imply; treat it as living documentation of the
+     * coupling, not as a guard against it silently reappearing.
+     * </p>
      */
     @Test
-    public void test_computedRolesAreDiscardedWithoutAnExplicitRoleScriptMapping() {
+    public void test_documentsThatComputedRolesRequireAnExplicitRoleScriptMapping() {
         server.enqueue("/api/users.list", usersListJson(userJson("U1", "alice@example.com")));
         server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true)));
         server.enqueue("/api/team.info", teamInfoJson());
@@ -284,6 +295,74 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
         @SuppressWarnings("unchecked")
         final List<String> role = (List<String>) callback.getDataMaps().get(0).get(fessConfig.getIndexFieldRole());
         assertEquals(List.of(dataConfigPermission), role);
+    }
+
+    /**
+     * Round-2 re-review: the startup warning is the one thing commit 15a342e actually added in
+     * code for the Critical finding, and it was untested. Must fire when {@code permission_sync}
+     * is enabled and no {@code scriptMap} value references {@code message.roles}.
+     */
+    @Test
+    public void test_warnsWhenPermissionSyncEnabledButNoScriptReferencesMessageRoles() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "general", false)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.history", historyJson());
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+
+        final Map<String, String> scriptMap = new HashMap<>();
+        scriptMap.put("title", "message.user");
+        scriptMap.put("content", "message.text");
+        scriptMap.put("url", "message.permalink");
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), paramMap, scriptMap, new HashMap<>());
+
+            assertTrue("permission_sync=true with no script referencing message.roles must warn",
+                    appender.messagesAt(org.apache.logging.log4j.Level.WARN)
+                            .stream()
+                            .anyMatch(m -> m.contains("no script value references message.roles")));
+        } finally {
+            appender.detach();
+        }
+    }
+
+    /**
+     * Round-2 re-review: the flip side of
+     * {@link #test_warnsWhenPermissionSyncEnabledButNoScriptReferencesMessageRoles} -- a warning
+     * that fires on a correct configuration is worse than one that misses cases, so a scriptMap
+     * that does map {@code role=message.roles} must not trigger it.
+     */
+    @Test
+    public void test_noWarningWhenAScriptReferencesMessageRoles() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "general", false)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.history", historyJson());
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+
+        final Map<String, String> scriptMap = new HashMap<>();
+        scriptMap.put("title", "message.user");
+        scriptMap.put("content", "message.text");
+        scriptMap.put("url", "message.permalink");
+        scriptMap.put("role", "message.roles");
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), paramMap, scriptMap, new HashMap<>());
+
+            assertFalse("a script that maps role=message.roles must not trigger the missing-mapping warning",
+                    appender.messagesAt(org.apache.logging.log4j.Level.WARN)
+                            .stream()
+                            .anyMatch(m -> m.contains("no script value references message.roles")));
+        } finally {
+            appender.detach();
+        }
     }
 
     /** 6: fail-closed -- a private channel whose membership could not be fetched is not indexed. */
