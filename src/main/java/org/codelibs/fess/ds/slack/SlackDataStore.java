@@ -786,18 +786,23 @@ public class SlackDataStore extends AbstractDataStore {
      *
      * <p>
      * <b>Fail-closed (design plan D3):</b> for a private channel, this returns {@code null} --
-     * meaning "index nothing from this channel this crawl", not "no roles" -- in either of two
-     * cases, both counted in {@code skippedChannelCount} for {@code storeData}'s single aggregate
+     * meaning "index nothing from this channel this crawl", not "no roles" -- in any of three
+     * cases, all counted in {@code skippedChannelCount} for {@code storeData}'s single aggregate
      * warning rather than one warning per channel:
      * </p>
      * <ul>
      * <li>{@link SlackClient#getChannelMembers} reports failure (its {@code false} return) --
      * the channel's membership could not be determined at all.</li>
-     * <li>The channel has one or more members but zero of them resolved to a role. This is
-     * distinct from a channel that genuinely has no members: {@link Profile#getEmail()} returns
-     * {@code null}, not an exception, when the token lacks the {@code users:read.email} scope, so
-     * without this check a missing scope would silently produce a channel visible to nobody --
-     * indistinguishable from an empty channel -- instead of a loud, actionable warning.</li>
+     * <li>{@link SlackClient#getChannelMembers} reports success with zero members (Ruling,
+     * whole-branch review Phase 3). Not treated as a legitimately memberless channel: the
+     * crawling token's own bot user must itself be a member of a private channel to call
+     * {@code conversations.members} -- or read anything from the channel at all -- with a
+     * meaningful result, so an empty member list here means membership could not actually be
+     * established, not that the channel has no one who can see it.</li>
+     * <li>The channel has one or more members but zero of them resolved to a role. {@link
+     * Profile#getEmail()} returns {@code null}, not an exception, when the token lacks the
+     * {@code users:read.email} scope, so without this check a missing scope would silently
+     * produce a channel visible to nobody instead of a loud, actionable warning.</li>
      * </ul>
      *
      * <p>
@@ -811,7 +816,7 @@ public class SlackDataStore extends AbstractDataStore {
      * @param paramMap the parameter map, for {@link #DEFAULT_PERMISSIONS}
      * @param defaultDataMap the default data map, for the DataConfig-level permission (F8/F9)
      * @param channel the channel to compute roles for
-     * @param skippedChannelCount incremented when this channel is skipped for either fail-closed
+     * @param skippedChannelCount incremented when this channel is skipped for any fail-closed
      *            reason above
      * @return the merged, deduplicated list of roles to expose as {@code message.roles}, or
      *         {@code null} if this channel must not be indexed this crawl
@@ -828,6 +833,13 @@ public class SlackDataStore extends AbstractDataStore {
                         + "(permission_sync fails closed on a members lookup failure).", channel.getName(), channel.getId());
                 return null;
             }
+            if (memberIds.isEmpty()) {
+                skippedChannelCount.incrementAndGet();
+                logger.warn("Private channel \"{}\" ({}) reported zero members, which is anomalous -- the crawling token's own bot "
+                        + "user must itself be a member to read a private channel at all; this channel will not be indexed this "
+                        + "crawl (permission_sync fails closed on an empty membership).", channel.getName(), channel.getId());
+                return null;
+            }
             int resolvedCount = 0;
             for (final String memberId : memberIds) {
                 final String email = getMemberEmail(client, memberId);
@@ -841,7 +853,9 @@ public class SlackDataStore extends AbstractDataStore {
                 roles.add(ComponentUtil.getSystemHelper().getSearchRoleByUser(email));
                 resolvedCount++;
             }
-            if (!memberIds.isEmpty() && resolvedCount == 0) {
+            if (resolvedCount == 0) {
+                // memberIds is guaranteed non-empty here: the isEmpty() case above already
+                // returned.
                 skippedChannelCount.incrementAndGet();
                 logger.warn(
                         "Private channel \"{}\" ({}) has {} member(s) but none resolved to an email; this channel will not be "

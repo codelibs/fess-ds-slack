@@ -305,6 +305,38 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
     }
 
     /**
+     * Ruling (whole-branch review, Phase 3): a private channel returning {@code ok:true,
+     * members:[]} is anomalous, not legitimately memberless -- the crawling token's own bot user
+     * must itself be a member to read a private channel at all -- so it must fail closed exactly
+     * like a members-lookup failure, not fall through to being indexed under only
+     * default_permissions/the DataConfig permission.
+     */
+    @Test
+    public void test_failClosedWhenMembersLookupReturnsEmptyList() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.members", membersJson());
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+        paramMap.put("include_private", "true");
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            final TestIndexUpdateCallback callback = new TestIndexUpdateCallback();
+            dataStore.storeData(new DataConfig(), callback, paramMap, new HashMap<>(), new HashMap<>());
+
+            assertEquals(0, callback.size());
+            assertEquals("a skipped channel must never be walked for messages", 0, server.getRequestCount("/api/conversations.history"));
+            assertTrue("the warning must call out the empty membership as anomalous",
+                    appender.messagesAt(org.apache.logging.log4j.Level.WARN).stream().anyMatch(m -> m.contains("zero members")));
+        } finally {
+            appender.detach();
+        }
+    }
+
+    /**
      * 7: fail-closed -- a private channel with members but zero resolved roles (every member's
      * email came back null, as happens when the token lacks users:read.email) is not indexed,
      * and the warning names the missing scope.
