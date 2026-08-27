@@ -458,8 +458,10 @@ public class SlackDataStore extends AbstractDataStore {
             // once per crawl: every private channel's content is indexed under only the
             // DataConfig-level permissions configured for this crawl, not per-channel
             // membership, which is a de facto publish switch if that permission field happens to
-            // be left empty.
-            if (!permissionSync && Boolean.TRUE.equals(client.includePrivate)) {
+            // be left empty. Minor (whole-branch review, Phase 3): gated on that field actually
+            // being empty -- an operator who *has* set a DataConfig permission is not running
+            // unrestricted, so warning regardless was a false alarm on every one of their crawls.
+            if (!permissionSync && Boolean.TRUE.equals(client.includePrivate) && isDataConfigPermissionEmpty(defaultDataMap)) {
                 logger.warn("permission_sync is disabled but include_private is enabled: private channel content will be indexed "
                         + "using only the DataConfig-level permissions configured for this crawl, not each channel's own "
                         + "membership. Set permission_sync=true to restrict each private channel's documents to that channel's "
@@ -1029,6 +1031,27 @@ public class SlackDataStore extends AbstractDataStore {
         if (defaultDataMap.get(ComponentUtil.getFessConfig().getIndexFieldRole()) instanceof final List<?> roleTypeList) {
             roleTypeList.stream().map(s -> (String) s).forEach(roles::add);
         }
+    }
+
+    /**
+     * Returns whether {@code defaultDataMap} carries no DataConfig-level permission at all, i.e.
+     * whether an operator has left this crawl's DataConfig permission field unset.
+     *
+     * <p>
+     * Used to gate the D1 warning in {@code storeData} (Minor, whole-branch review Phase 3): that
+     * warning is about content ending up unrestricted, which is only actually the case when this
+     * returns {@code true}. An operator who has set a DataConfig permission is not running
+     * unrestricted, even with {@link #PERMISSION_SYNC} off, so warning regardless of this check
+     * was a false alarm on every one of their crawls.
+     * </p>
+     *
+     * @param defaultDataMap the default data map, for the DataConfig-level permission
+     * @return {@code true} if {@code defaultDataMap} carries no non-empty DataConfig permission
+     *         list under {@code fessConfig.getIndexFieldRole()}
+     */
+    protected boolean isDataConfigPermissionEmpty(final Map<String, Object> defaultDataMap) {
+        return !(defaultDataMap.get(ComponentUtil.getFessConfig().getIndexFieldRole()) instanceof final List<?> roleTypeList)
+                || roleTypeList.isEmpty();
     }
 
     /**

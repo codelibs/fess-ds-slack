@@ -569,6 +569,39 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
     }
 
     /**
+     * Minor (whole-branch review, Phase 3): the D1 warning must not fire when the operator has
+     * already set a DataConfig-level permission -- that crawl is not actually unrestricted, so
+     * warning regardless would be a false alarm on every crawl for an operator who did the right
+     * thing.
+     */
+    @Test
+    public void test_noWarningWhenDataConfigPermissionIsSet() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.history", historyJson());
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("include_private", "true");
+
+        final FessConfig fessConfig = ComponentUtil.getFessConfig();
+        final Map<String, Object> defaultDataMap = new HashMap<>();
+        defaultDataMap.put(fessConfig.getIndexFieldRole(), new ArrayList<>(List.of(fessConfig.getRoleSearchRolePrefix() + "admin")));
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), paramMap, new HashMap<>(), defaultDataMap);
+
+            assertFalse("a populated DataConfig permission must not trigger the D1 warning",
+                    appender.messagesAt(org.apache.logging.log4j.Level.WARN)
+                            .stream()
+                            .anyMatch(m -> m.contains("permission_sync") && m.contains("include_private")));
+        } finally {
+            appender.detach();
+        }
+    }
+
+    /**
      * Important-1 (whole-branch review, Phase 3): a file shared into both a private and a public
      * channel must end up with the union of both channels' roles, not whichever channel's
      * files.list happened to be walked last. Channel order here -- private (C1) first, public
