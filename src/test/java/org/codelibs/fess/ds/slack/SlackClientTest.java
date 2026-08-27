@@ -496,6 +496,23 @@ public class SlackClientTest extends UnitDsTestCase {
         assertFalse(response.hasMore());
     }
 
+    /**
+     * {@code has_more:true} must deserialize to {@code hasMore()==true}. The test above only
+     * covers {@code has_more:false} and passes whether or not {@link
+     * ConversationsRepliesResponse#hasMore} actually binds to Slack's real field -- it did not,
+     * before the {@code @JsonProperty("has_more")} fix, because this field's only accessor
+     * carries neither an {@code is} nor a {@code get} prefix and so is invisible to Jackson's
+     * bean introspector.
+     */
+    @Test
+    public void testConversationsRepliesHasMoreTrueDeserializes() {
+        final String content = "{\"ok\":true,\"messages\":[{\"ts\":\"1.000100\",\"thread_ts\":\"1.000100\"}],"
+                + "\"has_more\":true,\"response_metadata\":{\"next_cursor\":\"CUR\"}}";
+        final ConversationsRepliesResponse response =
+                new ConversationsRepliesRequest(null, null, null).parseResponse(content, ConversationsRepliesResponse.class);
+        assertTrue(response.hasMore());
+    }
+
     // Test pagination
     @Test
     public void testConversationsList_withPagination() {

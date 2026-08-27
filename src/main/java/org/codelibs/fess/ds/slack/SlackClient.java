@@ -1137,6 +1137,11 @@ public class SlackClient implements Closeable {
             }
             response.getMembers().forEach(consumer);
             if (!aliveSupplier.getAsBoolean()) {
+                // Considered and rejected returning false here: true is the same "no error"
+                // signal getUsers/getChannelMessages already give a stop landing mid-page, and
+                // an incomplete member list from a stop is safe in this fail-closed feature's
+                // direction -- it can only omit a role (fewer people see the document), never
+                // add one -- unlike an API failure, which must not be treated as "zero members".
                 return true;
             }
             final String nextCursor = response.getResponseMetadata().getNextCursor();

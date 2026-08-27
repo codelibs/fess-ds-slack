@@ -87,6 +87,38 @@ public class SlackClientThreadRepliesTest extends UnitDsTestCase {
         assertEquals("reply", replies.get(0).getText());
     }
 
+    /**
+     * A thread with more replies than fit on one page must fetch a second page: {@code
+     * getMessageReplies}'s paging loop breaks out as soon as {@code response.hasMore()} is
+     * false, so this proves the fix end to end -- a unit-level fix to {@code
+     * ConversationsRepliesResponse#hasMore} means nothing if the paging loop still stops early
+     * for some other reason. Before the fix, {@code hasMore()} always returned {@code false}
+     * regardless of the JSON, so only page 1 would ever be requested and this test would fail
+     * with {@code repliesRequestCount==1} and {@code replies.size()==2}.
+     */
+    @Test
+    public void test_pagesThroughRepliesWhenHasMoreIsTrue() {
+        server.enqueue("/api/conversations.replies",
+                SlackApiMockServer
+                        .json("{\"ok\":true,\"messages\":[" + "{\"ts\":\"1.000100\",\"thread_ts\":\"1.000100\",\"text\":\"parent\"},"
+                                + "{\"ts\":\"2.000200\",\"thread_ts\":\"1.000100\",\"text\":\"reply1\"}"
+                                + "],\"has_more\":true,\"response_metadata\":{\"next_cursor\":\"CUR\"}}"));
+        server.enqueue("/api/conversations.replies",
+                SlackApiMockServer
+                        .json("{\"ok\":true,\"messages\":[" + "{\"ts\":\"1.000100\",\"thread_ts\":\"1.000100\",\"text\":\"parent\"},"
+                                + "{\"ts\":\"3.000300\",\"thread_ts\":\"1.000100\",\"text\":\"reply2\"}"
+                                + "],\"has_more\":false,\"response_metadata\":{\"next_cursor\":\"\"}}"));
+
+        final List<Message> replies = new ArrayList<>();
+        newClient().getMessageReplies("C1", "1.000100", 100, replies::add);
+
+        assertEquals(2, server.getRequestCount("/api/conversations.replies"));
+        assertEquals(2, replies.size());
+        assertEquals("reply1", replies.get(0).getText());
+        assertEquals("reply2", replies.get(1).getText());
+        assertEquals("CUR", server.getRequests("/api/conversations.replies").get(1).get("cursor"));
+    }
+
     private SlackClient newClient() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("token", "xoxb-test");
