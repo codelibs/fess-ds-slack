@@ -428,6 +428,14 @@ public class SlackDataStore extends AbstractDataStore {
         // storeData can report a single aggregate warning below instead of one warning per
         // channel -- which would bury the signal in a large workspace (design plan D3).
         final AtomicInteger skippedChannelCount = new AtomicInteger();
+        // IMPORTANT-3 (whole-branch review, Phase 3): counts members across all private
+        // channels -- skipped or not -- whose email did not resolve. A channel with 9 of 10
+        // members resolving is still indexed (resolvedCount > 0), but the tenth person silently
+        // gets no role for it; this fires on every private channel containing a bot user, since a
+        // bot has no profile email. Logged at debug only per member (see computeChannelRoles) but
+        // folded into the aggregate warning below so the total is visible without enabling debug
+        // logging for an entire crawl.
+        final AtomicInteger unresolvedMemberCount = new AtomicInteger();
         // Important-1 (whole-branch review, Phase 3): File#getPermalink() is channel-independent
         // -- files.list?channel=... returns the same file for every channel it is shared into --
         // unlike a message's permalink, which is always channel-scoped. Accumulates, per file
@@ -473,39 +481,70 @@ public class SlackDataStore extends AbstractDataStore {
                         + "permission_sync were disabled. Add role=message.roles to this crawl's scripts to apply them. See this "
                         + "module's README for details.");
             }
-            client.getChannels(channel -> {
-                // Checked here, not only inside SlackClient's paging loops: this is the loop that
-                // decides whether to dispatch the *next* channel at all, so stopping here skips
-                // channels that have not been started yet instead of only cutting short the one
-                // already in progress.
-                if (!alive || !crawlAlive.get()) {
-                    return;
-                }
-                // null means "permission_sync is off; do not expose message.roles at all", not
-                // "this channel has zero roles" -- see computeChannelRoles and MESSAGE_ROLES.
-                List<String> roles = null;
-                if (permissionSync) {
-                    roles = computeChannelRoles(client, paramMap, defaultDataMap, dataConfig, channel, skippedChannelCount);
-                    if (roles == null) {
-                        // Fail-closed (design plan D3): membership could not be established for
-                        // this private channel, so none of its documents are indexed at all this
-                        // crawl, rather than indexed with the wrong (too permissive) roles.
+            // Minor (whole-branch review, Phase 3): wrapped in try/finally so the aggregate
+            // warning below still reports whatever skippedChannelCount/unresolvedMemberCount
+            // accumulated even if a SlackApiException escapes getChannels (e.g. a fatal or
+            // transient conversations.list/conversations.members error) -- otherwise a crawl that
+            // partially ran before failing lost that count entirely, along with the exception
+            // itself still propagating unchanged out of storeData.
+            try {
+                client.getChannels(channel -> {
+                    // Checked here, not only inside SlackClient's paging loops: this is the loop
+                    // that decides whether to dispatch the *next* channel at all, so stopping here
+                    // skips channels that have not been started yet instead of only cutting short
+                    // the one already in progress.
+                    if (!alive || !crawlAlive.get()) {
                         return;
                     }
+                    // null means "permission_sync is off; do not expose message.roles at all",
+                    // not "this channel has zero roles" -- see computeChannelRoles and
+                    // MESSAGE_ROLES.
+                    List<String> roles = null;
+                    if (permissionSync) {
+                        roles = computeChannelRoles(client, paramMap, defaultDataMap, dataConfig, channel, skippedChannelCount,
+                                unresolvedMemberCount);
+                        if (roles == null) {
+                            // Fail-closed (design plan D3): membership could not be established
+                            // for this private channel, so none of its documents are indexed at
+                            // all this crawl, rather than indexed with the wrong (too permissive)
+                            // roles.
+                            return;
+                        }
+                    }
+                    processChannelMessages(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client,
+                            team, channel, fatalError, roles);
+                    if (fileCrawl) {
+                        processChannelFiles(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client,
+                                team, channel, fatalError, roles, fileRolesByUrl);
+                    }
+                });
+            } finally {
+                final int skipped = skippedChannelCount.get();
+                final int unresolvedMembers = unresolvedMemberCount.get();
+                if (skipped > 0 || unresolvedMembers > 0) {
+                    // Minor: worded to cover all three fail-closed conditions computeChannelRoles
+                    // can count into `skipped` (a members lookup failure, an anomalous empty
+                    // membership, or members present but none resolved to a role), not only the
+                    // last of the three, and to distinguish it from `unresolvedMembers` -- members
+                    // in a channel that was *not* skipped (at least one other member resolved)
+                    // but who individually lost access to it (IMPORTANT-3).
+                    final StringBuilder message = new StringBuilder();
+                    if (skipped > 0) {
+                        message.append(skipped)
+                                .append(" private channel(s) skipped because their membership could not be reliably established; "
+                                        + "permission_sync fails closed rather than index them without a working access-control list.");
+                    }
+                    if (unresolvedMembers > 0) {
+                        if (message.length() > 0) {
+                            message.append(' ');
+                        }
+                        message.append(unresolvedMembers)
+                                .append(" member(s) across all private channels did not resolve to a role (commonly a bot user, "
+                                        + "which has no profile email) and so did not get access to that channel's content, even "
+                                        + "though the channel itself was otherwise indexed.");
+                    }
+                    logger.warn(message.toString());
                 }
-                processChannelMessages(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
-                        channel, fatalError, roles);
-                if (fileCrawl) {
-                    processChannelFiles(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
-                            channel, fatalError, roles, fileRolesByUrl);
-                }
-            });
-
-            if (skippedChannelCount.get() > 0) {
-                logger.warn(
-                        "Skipped {} private channel(s) because their membership could not be resolved into at least one role; "
-                                + "permission_sync fails closed rather than index them without a reliable access-control list.",
-                        skippedChannelCount.get());
             }
 
             if (logger.isDebugEnabled()) {
@@ -856,12 +895,16 @@ public class SlackDataStore extends AbstractDataStore {
      * @param channel the channel to compute roles for
      * @param skippedChannelCount incremented when this channel is skipped for any fail-closed
      *            reason above
+     * @param unresolvedMemberCount incremented once per member of this channel whose email did
+     *            not resolve (IMPORTANT-3), regardless of whether the channel itself ends up
+     *            skipped -- distinct from {@code skippedChannelCount}'s third condition, which
+     *            fires only when <em>every</em> member fails to resolve
      * @return the merged, deduplicated list of roles to expose as {@code message.roles}, or
      *         {@code null} if this channel must not be indexed this crawl
      */
     protected List<String> computeChannelRoles(final SlackClient client, final DataStoreParams paramMap,
             final Map<String, Object> defaultDataMap, final DataConfig dataConfig, final Channel channel,
-            final AtomicInteger skippedChannelCount) {
+            final AtomicInteger skippedChannelCount, final AtomicInteger unresolvedMemberCount) {
         final List<String> roles = new ArrayList<>();
         if (channel.isPrivate()) {
             final List<String> memberIds = new ArrayList<>();
@@ -886,7 +929,13 @@ public class SlackDataStore extends AbstractDataStore {
             int resolvedCount = 0;
             for (final String memberId : memberIds) {
                 final String email = getMemberEmail(client, memberId);
-                if (email == null) {
+                // Minor: a blank check, not merely a null check -- getSearchRoleByUser("") would
+                // otherwise produce the bogus role consisting of just the role-search-user
+                // prefix, and resolvedCount++ below would count this member as resolved,
+                // defeating the fail-closed condition that requires at least one member to
+                // genuinely resolve.
+                if (StringUtil.isBlank(email)) {
+                    unresolvedMemberCount.incrementAndGet();
                     if (logger.isDebugEnabled()) {
                         logger.debug("No email for member {} of channel {} ({}); this member gets no role for it.", memberId,
                                 channel.getName(), channel.getId());

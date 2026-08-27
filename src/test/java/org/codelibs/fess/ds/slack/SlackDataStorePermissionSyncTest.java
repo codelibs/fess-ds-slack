@@ -398,6 +398,81 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
     }
 
     /**
+     * IMPORTANT-3 (whole-branch review, Phase 3) + Minor: an unresolved member -- a blank email or
+     * no email at all -- must not block a channel that has at least one other resolving member,
+     * but must still be counted and folded into the aggregate warning. A blank (not null) email
+     * must not silently produce the bogus "just the prefix" role, nor count toward
+     * {@code resolvedCount}.
+     */
+    @Test
+    public void test_unresolvedMembersInAnIndexedChannelAreCountedInTheAggregateWarning() {
+        server.enqueue("/api/users.list", usersListJson(userJson("U1", "alice@example.com"), userJson("U2", ""), userJson("U3", null)));
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.members", membersJson("U1", "U2", "U3"));
+        server.enqueue("/api/conversations.history",
+                historyJson(messageJson("Hello", "1111111111.000100", "https://example.slack.com/archives/C1/p1111111111000100")));
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+        paramMap.put("include_private", "true");
+
+        final Map<String, String> scriptMap = new HashMap<>();
+        scriptMap.put("captured_roles", "message.roles");
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            final TestIndexUpdateCallback callback = new TestIndexUpdateCallback();
+            dataStore.storeData(new DataConfig(), callback, paramMap, scriptMap, new HashMap<>());
+
+            assertEquals(1, callback.size());
+            @SuppressWarnings("unchecked")
+            final List<String> roles = (List<String>) callback.getDataMaps().get(0).get("captured_roles");
+            final FessConfig fessConfig = ComponentUtil.getFessConfig();
+            assertEquals(List.of(fessConfig.getRoleSearchUserPrefix() + "alice@example.com"), roles);
+
+            assertTrue("the aggregate warning must count both unresolved members (U2's blank email, U3's missing email)",
+                    appender.messagesAt(org.apache.logging.log4j.Level.WARN)
+                            .stream()
+                            .anyMatch(m -> m.contains("2") && m.contains("did not resolve to a role")));
+        } finally {
+            appender.detach();
+        }
+    }
+
+    /**
+     * Minor (whole-branch review, Phase 3): the aggregate warning must still fire for a channel
+     * skipped earlier in the walk even when a later channel's processing throws a
+     * {@code SlackApiException} out of {@code getChannels} (a fatal error a later channel's
+     * conversations.history call is documented to propagate directly out of {@code storeData}).
+     */
+    @Test
+    public void test_aggregateWarningStillFiresWhenGetChannelsThrows() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true), channelJson("C2", "general", false)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.members", SlackApiMockServer.json("{\"ok\":false,\"error\":\"channel_not_found\"}"));
+        server.enqueue("/api/conversations.history", SlackApiMockServer.json("{\"ok\":false,\"error\":\"invalid_auth\"}"));
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+        paramMap.put("include_private", "true");
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            org.junit.jupiter.api.Assertions.assertThrows(org.codelibs.fess.ds.slack.api.SlackApiException.class,
+                    () -> dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), paramMap, new HashMap<>(), new HashMap<>()));
+
+            assertTrue(
+                    "the earlier-skipped channel's count must still be warned about even though a later channel's "
+                            + "conversations.history call threw a fatal SlackApiException out of getChannels",
+                    appender.messagesAt(org.apache.logging.log4j.Level.WARN).stream().anyMatch(m -> m.contains("private channel(s)")));
+        } finally {
+            appender.detach();
+        }
+    }
+
+    /**
      * D1: permission_sync=false plus include_private=true indexes private-channel content under
      * DataConfig permissions alone -- a de facto publish switch when that permission field is
      * left empty -- so this combination must warn, once per crawl, without being forbidden
