@@ -18,6 +18,7 @@ package org.codelibs.fess.ds.slack;
 import static java.util.Collections.EMPTY_LIST;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
@@ -32,6 +33,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -40,6 +42,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.codelibs.core.exception.InterruptedRuntimeException;
 import org.codelibs.core.lang.StringUtil;
+import org.codelibs.core.stream.StreamUtil;
 import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.Constants;
 import org.codelibs.fess.app.service.FailureUrlService;
@@ -62,6 +65,7 @@ import org.codelibs.fess.exception.DataStoreCrawlingException;
 import org.codelibs.fess.helper.CrawlerStatsHelper;
 import org.codelibs.fess.helper.CrawlerStatsHelper.StatsAction;
 import org.codelibs.fess.helper.CrawlerStatsHelper.StatsKeyObject;
+import org.codelibs.fess.helper.PermissionHelper;
 import org.codelibs.fess.opensearch.config.exentity.DataConfig;
 import org.codelibs.fess.util.ComponentUtil;
 import org.lastaflute.di.core.exception.ComponentNotFoundException;
@@ -245,6 +249,35 @@ public class SlackDataStore extends AbstractDataStore {
      * convention on a miss -- so no override is needed here.
      */
     protected static final String READ_INTERVAL = "read_interval";
+    /**
+     * Parameter name for enabling ACL synchronisation: resolving each private channel's
+     * membership into search roles so its content is searchable only by that channel's members.
+     *
+     * <p>
+     * Defaults to {@code false} (opt-in). Turning this on for a workspace with content already
+     * indexed under the previous, unrestricted behavior makes every private channel's documents
+     * suddenly invisible in search until the next crawl re-indexes them with roles attached --
+     * a significant, surprising change in what search results a user sees, so it is not the
+     * default. See {@link #isPermissionSync} and this class's fail-closed handling in {@link
+     * #computeChannelRoles}.
+     * </p>
+     */
+    protected static final String PERMISSION_SYNC = "permission_sync";
+    /**
+     * Parameter name for a comma-separated list of additional permissions -- in the same
+     * {@code {user}}/{@code {group}}/{@code {role}}-prefixed syntax the admin UI's own permission
+     * fields use -- applied to every document regardless of channel membership.
+     *
+     * <p>
+     * Unlike the per-channel member roles this phase computes, and the DataConfig-level
+     * permissions {@link #computeChannelRoles} merges in from {@code defaultDataMap}, a value
+     * here is encoded via {@link PermissionHelper#encode} at merge time, matching {@code
+     * OneDriveDataStore}'s {@code default_permissions} parameter (fess-ds-microsoft365) -- the
+     * admin UI encodes its own permission fields on save, but a value typed into this
+     * data-store-specific parameter has never passed through that encoding step.
+     * </p>
+     */
+    protected static final String DEFAULT_PERMISSIONS = "default_permissions";
 
     /**
      * Message {@code subtype} values that are Slack-generated channel-administration
@@ -308,6 +341,14 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String MESSAGE_PERMALINK = "permalink";
     /** Script field name for message attachments. */
     protected static final String MESSAGE_ATTACHMENTS = "attachments";
+    /**
+     * Script field name for the search roles allowed to see this message/file, exposed as
+     * {@code message.roles} only when {@link #PERMISSION_SYNC} is enabled -- see
+     * {@link #computeChannelRoles} for how it is computed and {@link #processMessage}/{@link
+     * #processFile} for why it is omitted entirely, not exposed as an empty list, when the
+     * feature is off (byte-identical backward compatibility, F9/D5).
+     */
+    protected static final String MESSAGE_ROLES = "roles";
 
     /** Name of the content extractor to use for file processing. */
     protected String extractorName = "tikaExtractor";
@@ -338,6 +379,7 @@ public class SlackDataStore extends AbstractDataStore {
         configMap.put(IGNORE_SYSTEM_EVENTS, isIgnoreSystemEvents(paramMap));
         configMap.put(READ_INTERVAL, getReadInterval(paramMap));
         configMap.put(URL_FILTER, getUrlFilter(paramMap));
+        configMap.put(PERMISSION_SYNC, isPermissionSync(paramMap));
         if (logger.isDebugEnabled()) {
             logger.debug("configMap: {}", configMap);
         }
@@ -363,6 +405,10 @@ public class SlackDataStore extends AbstractDataStore {
         // via executorService) while this method's own channel walk reads it.
         final AtomicBoolean crawlAlive = new AtomicBoolean(true);
         configMap.put(CRAWL_ALIVE, crawlAlive);
+        // Counts private channels skipped by the fail-closed rule in computeChannelRoles, so
+        // storeData can report a single aggregate warning below instead of one warning per
+        // channel -- which would bury the signal in a large workspace (design plan D3).
+        final AtomicInteger skippedChannelCount = new AtomicInteger();
         // A supplier over both flags rather than a one-time snapshot, so a stop that lands after
         // this client is constructed is still seen by every paging loop SlackClient runs
         // afterward. The two are different stops and both must be honoured: `alive` is the
@@ -371,6 +417,7 @@ public class SlackDataStore extends AbstractDataStore {
         try (final SlackClient client = new SlackClient(paramMap, () -> alive && crawlAlive.get())) {
             final Team team = client.getTeam();
             final boolean fileCrawl = (Boolean) configMap.get(FILE_CRAWL);
+            final boolean permissionSync = (Boolean) configMap.get(PERMISSION_SYNC);
             client.getChannels(channel -> {
                 // Checked here, not only inside SlackClient's paging loops: this is the loop that
                 // decides whether to dispatch the *next* channel at all, so stopping here skips
@@ -379,13 +426,32 @@ public class SlackDataStore extends AbstractDataStore {
                 if (!alive || !crawlAlive.get()) {
                     return;
                 }
+                // null means "permission_sync is off; do not expose message.roles at all", not
+                // "this channel has zero roles" -- see computeChannelRoles and MESSAGE_ROLES.
+                List<String> roles = null;
+                if (permissionSync) {
+                    roles = computeChannelRoles(client, paramMap, defaultDataMap, channel, skippedChannelCount);
+                    if (roles == null) {
+                        // Fail-closed (design plan D3): membership could not be established for
+                        // this private channel, so none of its documents are indexed at all this
+                        // crawl, rather than indexed with the wrong (too permissive) roles.
+                        return;
+                    }
+                }
                 processChannelMessages(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
-                        channel, fatalError);
+                        channel, fatalError, roles);
                 if (fileCrawl) {
                     processChannelFiles(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
-                            channel, fatalError);
+                            channel, fatalError, roles);
                 }
             });
+
+            if (skippedChannelCount.get() > 0) {
+                logger.warn(
+                        "Skipped {} private channel(s) because their membership could not be resolved into at least one role; "
+                                + "permission_sync fails closed rather than index them without a reliable access-control list.",
+                        skippedChannelCount.get());
+            }
 
             if (logger.isDebugEnabled()) {
                 logger.debug("Shutting down thread executor.");
@@ -574,6 +640,17 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Determines whether ACL synchronisation is enabled. See {@link #PERMISSION_SYNC} for what
+     * this does and why it defaults to {@code false}.
+     *
+     * @param paramMap the configuration parameters
+     * @return true if per-channel member roles should be resolved and enforced
+     */
+    protected boolean isPermissionSync(final DataStoreParams paramMap) {
+        return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(PERMISSION_SYNC, Constants.FALSE));
+    }
+
+    /**
      * Determines whether Slack-generated channel-administration messages (see
      * {@link #SYSTEM_EVENT_SUBTYPES}) should be excluded from indexing.
      *
@@ -649,6 +726,147 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Computes the search roles allowed to see {@code channel}'s content, or signals that the
+     * channel must be skipped entirely this crawl. Only called when {@link #PERMISSION_SYNC} is
+     * enabled (see {@code storeData}).
+     *
+     * <p>
+     * <b>Public channels never call {@code conversations.members}</b> (design plan D2): every
+     * connector surveyed for this feature's design treats a public channel as visible to the
+     * whole workspace, and skipping the call here saves one Tier 4 API call per public channel on
+     * top of that. Only a private channel ({@link Channel#isPrivate()}) has its membership
+     * resolved into roles.
+     * </p>
+     *
+     * <p>
+     * <b>Fail-closed (design plan D3):</b> for a private channel, this returns {@code null} --
+     * meaning "index nothing from this channel this crawl", not "no roles" -- in either of two
+     * cases, both counted in {@code skippedChannelCount} for {@code storeData}'s single aggregate
+     * warning rather than one warning per channel:
+     * </p>
+     * <ul>
+     * <li>{@link SlackClient#getChannelMembers} reports failure (its {@code false} return) --
+     * the channel's membership could not be determined at all.</li>
+     * <li>The channel has one or more members but zero of them resolved to a role. This is
+     * distinct from a channel that genuinely has no members: {@link Profile#getEmail()} returns
+     * {@code null}, not an exception, when the token lacks the {@code users:read.email} scope, so
+     * without this check a missing scope would silently produce a channel visible to nobody --
+     * indistinguishable from an empty channel -- instead of a loud, actionable warning.</li>
+     * </ul>
+     *
+     * <p>
+     * When neither fail-closed condition applies (including every public channel), the resolved
+     * member roles -- empty for a public channel -- are merged with {@link #DEFAULT_PERMISSIONS}
+     * and the DataConfig permission already carried on {@code defaultDataMap} by {@link
+     * #mergeAdditionalRoles}, deduplicated, and returned.
+     * </p>
+     *
+     * @param client the Slack client, for {@code conversations.members} and cached user lookups
+     * @param paramMap the parameter map, for {@link #DEFAULT_PERMISSIONS}
+     * @param defaultDataMap the default data map, for the DataConfig-level permission (F8/F9)
+     * @param channel the channel to compute roles for
+     * @param skippedChannelCount incremented when this channel is skipped for either fail-closed
+     *            reason above
+     * @return the merged, deduplicated list of roles to expose as {@code message.roles}, or
+     *         {@code null} if this channel must not be indexed this crawl
+     */
+    protected List<String> computeChannelRoles(final SlackClient client, final DataStoreParams paramMap,
+            final Map<String, Object> defaultDataMap, final Channel channel, final AtomicInteger skippedChannelCount) {
+        final List<String> roles = new ArrayList<>();
+        if (channel.isPrivate()) {
+            final List<String> memberIds = new ArrayList<>();
+            final boolean succeeded = client.getChannelMembers(channel.getId(), memberIds::add);
+            if (!succeeded) {
+                skippedChannelCount.incrementAndGet();
+                logger.warn("Failed to get the members of private channel \"{}\" ({}); this channel will not be indexed this crawl "
+                        + "(permission_sync fails closed on a members lookup failure).", channel.getName(), channel.getId());
+                return null;
+            }
+            int resolvedCount = 0;
+            for (final String memberId : memberIds) {
+                final String email = getMemberEmail(client, memberId);
+                if (email == null) {
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("No email for member {} of channel {} ({}); this member gets no role for it.", memberId,
+                                channel.getName(), channel.getId());
+                    }
+                    continue;
+                }
+                roles.add(ComponentUtil.getSystemHelper().getSearchRoleByUser(email));
+                resolvedCount++;
+            }
+            if (!memberIds.isEmpty() && resolvedCount == 0) {
+                skippedChannelCount.incrementAndGet();
+                logger.warn(
+                        "Private channel \"{}\" ({}) has {} member(s) but none resolved to an email; this channel will not be "
+                                + "indexed this crawl. This usually means the token is missing the users:read.email scope.",
+                        channel.getName(), channel.getId(), memberIds.size());
+                return null;
+            }
+        }
+        mergeAdditionalRoles(paramMap, defaultDataMap, roles);
+        return roles.stream().distinct().collect(Collectors.toList());
+    }
+
+    /**
+     * Looks up a channel member's email by user ID, using {@link SlackClient}'s already-preloaded
+     * user cache (F4: no additional API call in the common case).
+     *
+     * @param client the Slack client
+     * @param memberId the member's user ID
+     * @return the member's email, or {@code null} if the user could not be looked up or carries
+     *         no email (e.g. the token lacks the {@code users:read.email} scope -- see {@link
+     *         Profile#getEmail()})
+     */
+    protected String getMemberEmail(final SlackClient client, final String memberId) {
+        try {
+            final User user = client.getUser(memberId);
+            if (user == null) {
+                return null;
+            }
+            final Profile profile = user.getProfile();
+            return profile == null ? null : profile.getEmail();
+        } catch (final ExecutionException | UncheckedExecutionException | InvalidCacheLoadException e) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Failed to look up member {} for role resolution.", memberId, e);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Merges {@link #DEFAULT_PERMISSIONS} and the DataConfig-level permission already carried on
+     * {@code defaultDataMap} into {@code roles}, in place.
+     *
+     * <p>
+     * <b>Two different encoding rules, on purpose (design plan D5, F7/F8):</b> {@code
+     * default_permissions} is a raw, {@code {user}}/{@code {group}}/{@code {role}}-prefixed value
+     * an operator typed into this data-store-specific parameter, so it is run through {@link
+     * PermissionHelper#encode} here, exactly as {@code OneDriveDataStore}'s (fess-ds-microsoft365)
+     * same-named parameter does. The DataConfig permission, by contrast, was already encoded once
+     * when an administrator saved it in the admin UI (F8) -- {@link
+     * org.codelibs.fess.ds.AbstractDataStore#store} copies it onto {@code defaultDataMap} under
+     * {@code fessConfig.getIndexFieldRole()} before {@code storeData} ever runs -- so encoding it
+     * again here would double-encode it and corrupt the value (F9). {@code TeamsDataStore}
+     * (fess-ds-microsoft365) omits this second source entirely; that omission must not be copied
+     * (F15).
+     * </p>
+     *
+     * @param paramMap the parameter map, for {@link #DEFAULT_PERMISSIONS}
+     * @param defaultDataMap the default data map, for the already-encoded DataConfig permission
+     * @param roles the role list to merge into, in place
+     */
+    protected void mergeAdditionalRoles(final DataStoreParams paramMap, final Map<String, Object> defaultDataMap,
+            final List<String> roles) {
+        final PermissionHelper permissionHelper = ComponentUtil.getPermissionHelper();
+        StreamUtil.split(paramMap.getAsString(DEFAULT_PERMISSIONS, StringUtil.EMPTY), ",")
+                .of(stream -> stream.filter(StringUtil::isNotBlank).map(permissionHelper::encode).forEach(roles::add));
+        if (defaultDataMap.get(ComponentUtil.getFessConfig().getIndexFieldRole()) instanceof final List<?> roleTypeList) {
+            roleTypeList.stream().map(s -> (String) s).forEach(roles::add);
+        }
+    }
+
+    /**
      * Processes all messages in a channel, including threaded replies.
      *
      * <p>
@@ -680,11 +898,15 @@ public class SlackDataStore extends AbstractDataStore {
      * @param channel the channel to process
      * @param fatalError latch shared with {@link #storeData} for a fatal {@link SlackApiException}
      *            raised on this method's worker thread (see {@link #latchFatalError})
+     * @param roles the search roles allowed to see this channel's content, exposed to scripts as
+     *            {@code message.roles} -- {@code null} when {@link #PERMISSION_SYNC} is disabled,
+     *            meaning the field is omitted entirely rather than exposed as an empty list (see
+     *            {@link #MESSAGE_ROLES})
      */
     protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
             final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
             final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client, final Team team,
-            final Channel channel, final AtomicReference<SlackApiException> fatalError) {
+            final Channel channel, final AtomicReference<SlackApiException> fatalError, final List<String> roles) {
         final boolean ignoreSystemEvents = (Boolean) configMap.get(IGNORE_SYSTEM_EVENTS);
         final long readInterval = (Long) configMap.get(READ_INTERVAL);
         client.getChannelMessages(channel.getId(), message -> {
@@ -706,10 +928,11 @@ public class SlackDataStore extends AbstractDataStore {
             }
             safeExecute(executorService, () -> {
                 try {
-                    processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+                    processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message,
+                            roles);
                     if (isThreadParent(message)) {
                         processMessageReplies(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel,
-                                message);
+                                message, roles);
                     }
                 } catch (final SlackApiException e) {
                     latchFatalError(executorService, fatalError, (AtomicBoolean) configMap.get(CRAWL_ALIVE), e);
@@ -855,16 +1078,18 @@ public class SlackDataStore extends AbstractDataStore {
      * @param channel the channel to process
      * @param fatalError latch shared with {@link #storeData} for a fatal {@link SlackApiException}
      *            raised on this method's worker thread (see {@link #latchFatalError})
+     * @param roles the search roles allowed to see this channel's content; see
+     *            {@link #processChannelMessages}'s matching parameter for what {@code null} means
      */
     protected void processChannelFiles(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel,
-            final AtomicReference<SlackApiException> fatalError) {
+            final AtomicReference<SlackApiException> fatalError, final List<String> roles) {
         final long readInterval = (Long) configMap.get(READ_INTERVAL);
         client.getChannelFiles(channel.getId(), file -> {
             safeExecute(executorService, () -> {
                 try {
-                    processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, file);
+                    processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, file, roles);
                 } catch (final SlackApiException e) {
                     latchFatalError(executorService, fatalError, (AtomicBoolean) configMap.get(CRAWL_ALIVE), e);
                 }
@@ -888,13 +1113,15 @@ public class SlackDataStore extends AbstractDataStore {
      * @param team the team information
      * @param channel the channel containing the thread
      * @param parentMessage the parent message of the thread
+     * @param roles the search roles allowed to see this channel's content; see
+     *            {@link #processChannelMessages}'s matching parameter for what {@code null} means
      */
     protected void processMessageReplies(final DataConfig dataConfig, final IndexUpdateCallback callback,
             final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
             final Map<String, Object> defaultDataMap, final SlackClient client, final Team team, final Channel channel,
-            final Message parentMessage) {
+            final Message parentMessage, final List<String> roles) {
         client.getMessageReplies(channel.getId(), parentMessage.getThreadTs(), message -> {
-            processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
+            processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message, roles);
         });
     }
 
@@ -978,10 +1205,13 @@ public class SlackDataStore extends AbstractDataStore {
      * @param team the team information
      * @param channel the channel containing the message
      * @param message the message to process
+     * @param roles the search roles allowed to see this message, exposed to scripts as {@code
+     *            message.roles} -- omitted entirely, not exposed as an empty list, when {@code
+     *            null} (see {@link #MESSAGE_ROLES})
      */
     protected void processMessage(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-            final SlackClient client, final Team team, final Channel channel, final Message message) {
+            final SlackClient client, final Team team, final Channel channel, final Message message, final List<String> roles) {
         final CrawlerStatsHelper crawlerStatsHelper = ComponentUtil.getCrawlerStatsHelper();
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         // getMessagePermalink is resolved outside the main try/catch below because
@@ -1027,6 +1257,13 @@ public class SlackDataStore extends AbstractDataStore {
             messageMap.put(MESSAGE_CHANNEL, channel.getName());
             messageMap.put(MESSAGE_PERMALINK, url);
             messageMap.put(MESSAGE_ATTACHMENTS, getMessageAttachmentsText(message));
+            // Only put when non-null: null means permission_sync is disabled, and this key must
+            // then be absent, not present with an empty list, so message.roles evaluates to null
+            // in a script exactly as it did before this feature existed (F9/D5, backward
+            // compatibility).
+            if (roles != null) {
+                messageMap.put(MESSAGE_ROLES, roles);
+            }
             resultMap.put(MESSAGE, messageMap);
 
             crawlerStatsHelper.record(statsKey, StatsAction.PREPARED);
@@ -1113,10 +1350,12 @@ public class SlackDataStore extends AbstractDataStore {
      * @param team the team information
      * @param channel the channel containing the file
      * @param file the file to process
+     * @param roles the search roles allowed to see this file; see {@link #processMessage}'s
+     *            matching parameter for what {@code null} means
      */
     protected void processFile(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
-            final SlackClient client, final Team team, final Channel channel, final File file) {
+            final SlackClient client, final Team team, final Channel channel, final File file, final List<String> roles) {
         final CrawlerStatsHelper crawlerStatsHelper = ComponentUtil.getCrawlerStatsHelper();
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         final String url = file.getPermalink();
@@ -1167,6 +1406,11 @@ public class SlackDataStore extends AbstractDataStore {
             fileMap.put(MESSAGE_CHANNEL, channel.getName());
             fileMap.put(MESSAGE_PERMALINK, file.getPermalink());
             fileMap.put(MESSAGE_ATTACHMENTS, "");
+            // See the matching guard in processMessage: null must mean "key absent", not "empty
+            // list", to keep permission_sync=false byte-identical to before this feature (F9/D5).
+            if (roles != null) {
+                fileMap.put(MESSAGE_ROLES, roles);
+            }
             resultMap.put(MESSAGE, fileMap);
 
             crawlerStatsHelper.record(statsKey, StatsAction.PREPARED);
