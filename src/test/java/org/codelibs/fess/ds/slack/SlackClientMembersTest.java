@@ -68,6 +68,35 @@ public class SlackClientMembersTest extends UnitDsTestCase {
         assertEquals("C42", server.getRequests("/api/conversations.members").get(0).get("channel"));
     }
 
+    /**
+     * A channel-scoped failure (e.g. {@code channel_not_found}, which {@link
+     * SlackClient#handleApiError} warns and returns for rather than throwing) must be
+     * distinguishable from an empty channel: fail-closed ACL synchronisation depends on this
+     * (see design plan D3/F12).
+     */
+    @Test
+    public void test_reportsFailureDistinctlyFromEmptyMembership() {
+        server.enqueue("/api/conversations.members", SlackApiMockServer.json("{\"ok\":false,\"error\":\"channel_not_found\"}"));
+
+        final List<String> members = new ArrayList<>();
+        final boolean succeeded = newClient().getChannelMembers("C1", members::add);
+
+        assertFalse("a channel-scoped error must be reported as failure", succeeded);
+        assertEquals(0, members.size());
+    }
+
+    @Test
+    public void test_emptyMembershipIsNotAFailure() {
+        server.enqueue("/api/conversations.members",
+                SlackApiMockServer.json("{\"ok\":true,\"members\":[],\"response_metadata\":{\"next_cursor\":\"\"}}"));
+
+        final List<String> members = new ArrayList<>();
+        final boolean succeeded = newClient().getChannelMembers("C1", members::add);
+
+        assertTrue("an empty member list on ok:true is a successful, zero-member result", succeeded);
+        assertEquals(0, members.size());
+    }
+
     private SlackClient newClient() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("token", "xoxb-test");

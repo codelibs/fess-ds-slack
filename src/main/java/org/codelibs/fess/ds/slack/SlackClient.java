@@ -1103,19 +1103,41 @@ public class SlackClient implements Closeable {
      * org.codelibs.fess.ds.slack.api.type.Channel}.
      * </p>
      *
+     * <p>
+     * <b>Returns {@code false}, rather than throwing, for a channel-scoped failure.</b> Every
+     * other paging method in this class ({@link #getAllChannels}, {@link #getChannelMessages},
+     * {@link #getChannelFiles}, {@link #getUsers}) is {@code void}: {@link #handleApiError}
+     * either throws {@link SlackApiException} for a fatal/transient code (still true here, and
+     * still propagates uncaught) or warns and returns for a channel-scoped code such as {@code
+     * channel_not_found}, and none of those callers needs to tell "warned and stopped" apart
+     * from "walked every page and found nothing". A caller computing ACLs does need exactly that
+     * distinction -- see the design plan's fail-closed rule (D3): a private channel whose
+     * membership could not be determined must be skipped entirely, not indexed as if it had no
+     * members. A dedicated checked exception was rejected for this: it would make a routine,
+     * per-channel condition (one channel returning {@code channel_not_found} while the rest of
+     * the crawl is healthy) look like the same kind of failure {@link SlackApiException} already
+     * means -- "the whole crawl cannot continue" -- forcing every caller to either catch it
+     * per-channel (indistinguishable in effect from this boolean) or let it escape and abort the
+     * entire crawl over one channel. A boolean is the minimal signal the caller actually needs:
+     * "were the members {@code consumer} received the complete, authoritative list, or not".
+     * </p>
+     *
      * @param channelId the channel ID
      * @param consumer the function to process each member user ID
+     * @return {@code true} if every page was fetched successfully (including the zero-member
+     *         case on an {@code ok:true} response with an empty list), {@code false} if a
+     *         channel-scoped error stopped the walk before it completed
      */
-    public void getChannelMembers(final String channelId, final Consumer<String> consumer) {
+    public boolean getChannelMembers(final String channelId, final Consumer<String> consumer) {
         ConversationsMembersResponse response = conversationsMembers(channelId).execute();
         while (true) {
             if (!response.ok()) {
                 handleApiError("conversations.members", response);
-                return;
+                return false;
             }
             response.getMembers().forEach(consumer);
             if (!aliveSupplier.getAsBoolean()) {
-                return;
+                return true;
             }
             final String nextCursor = response.getResponseMetadata().getNextCursor();
             if (nextCursor.isEmpty()) {
@@ -1123,6 +1145,7 @@ public class SlackClient implements Closeable {
             }
             response = conversationsMembers(channelId).cursor(nextCursor).execute();
         }
+        return true;
     }
 
 }
