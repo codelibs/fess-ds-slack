@@ -461,6 +461,52 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
         }
     }
 
+    /**
+     * Important-1 (whole-branch review, Phase 3): a file shared into both a private and a public
+     * channel must end up with the union of both channels' roles, not whichever channel's
+     * files.list happened to be walked last. Channel order here -- private (C1) first, public
+     * (C2) second, matching {@code conversations.list}'s response order -- is exactly the
+     * scenario the review called out: with the pre-fix code, the last {@code callback.store} for
+     * this shared URL would carry only C2's empty (unrestricted) roles, silently dropping
+     * alice's restriction.
+     */
+    @Test
+    public void test_fileSharedAcrossChannelsGetsUnionOfRoles() {
+        server.enqueue("/api/users.list", usersListJson(userJson("U1", "alice@example.com")));
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true), channelJson("C2", "general", false)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.members", membersJson("U1"));
+        server.enqueue("/api/conversations.history", historyJson());
+        server.enqueue("/api/conversations.history", historyJson());
+        server.enqueue("/api/files.list", filesListJson(fileJson("F1", "https://example.slack.com/files/F1")));
+        server.enqueue("/api/files.list", filesListJson(fileJson("F1", "https://example.slack.com/files/F1")));
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+        paramMap.put("include_private", "true");
+        paramMap.put("file_crawl", "true");
+
+        final Map<String, String> scriptMap = new HashMap<>();
+        scriptMap.put("captured_roles", "message.roles");
+        scriptMap.put("url", "message.permalink");
+
+        final TestIndexUpdateCallback callback = new TestIndexUpdateCallback();
+        dataStore.storeData(new DataConfig(), callback, paramMap, scriptMap, new HashMap<>());
+
+        final List<Map<String, Object>> forFile = callback.getDataMaps()
+                .stream()
+                .filter(m -> "https://example.slack.com/files/F1".equals(m.get("url")))
+                .collect(java.util.stream.Collectors.toList());
+        assertEquals("both channels' files.list calls must have stored this shared file", 2, forFile.size());
+        final FessConfig fessConfig = ComponentUtil.getFessConfig();
+        @SuppressWarnings("unchecked")
+        final List<String> lastStoredRoles = (List<String>) forFile.get(forFile.size() - 1).get("captured_roles");
+        assertTrue(
+                "the union must retain alice's role from the private channel even though the public channel (with no roles "
+                        + "of its own) was processed last",
+                lastStoredRoles.contains(fessConfig.getRoleSearchUserPrefix() + "alice@example.com"));
+    }
+
     private DataStoreParams baseParamMap() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("token", "xoxb-test");
@@ -513,5 +559,18 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
             members.append('"').append(id).append('"');
         }
         return SlackApiMockServer.json("{\"ok\":true,\"members\":[" + members + "],\"response_metadata\":{\"next_cursor\":\"\"}}");
+    }
+
+    private SlackApiMockServer.MockResponse filesListJson(final String... fileJsons) {
+        return SlackApiMockServer.json("{\"ok\":true,\"files\":[" + String.join(",", fileJsons) + "]," + "\"paging\":{\"count\":"
+                + fileJsons.length + ",\"total\":" + fileJsons.length + ",\"page\":1,\"pages\":1}}");
+    }
+
+    // url_private_download points at this mock server's own "/api/" context so the download
+    // "succeeds" against the default (or strict-mode-unscripted) response, matching the pattern
+    // SlackDataStoreMessageFileRethrowSlackApiExceptionTest already established.
+    private String fileJson(final String id, final String permalink) {
+        return "{\"id\":\"" + id + "\",\"permalink\":\"" + permalink + "\",\"mimetype\":\"text/plain\",\"size\":10,"
+                + "\"name\":\"f.txt\",\"url_private_download\":\"" + server.getEndpoint() + "download/" + id + "\"}";
     }
 }
