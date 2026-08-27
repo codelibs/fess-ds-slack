@@ -198,12 +198,15 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
     }
 
     /**
-     * 5/8/9: the three-source merge -- member roles (not encoded), default_permissions (encoded),
-     * and the DataConfig permission already carried on defaultDataMap (not re-encoded, F8/F9) --
-     * must all be present, deduplicated, and the DataConfig value must survive byte-for-byte.
+     * 5/8/9: the three-source merge -- member roles, {@code default_permissions} (encoded), and
+     * the DataConfig permission already carried on {@code defaultDataMap} -- must all be present
+     * and deduplicated, and the DataConfig value must survive byte-for-byte: proof that this
+     * third source is not silently omitted (the real regression risk this guards against, F15 --
+     * see {@code mergeAdditionalRoles}'s javadoc for why re-encoding it would be harmless, not
+     * corrupting, and so is not what this test is about).
      */
     @Test
-    public void test_threeSourceMergeDoesNotDoubleEncodeDataConfigPermission() {
+    public void test_threeSourceMergeIncludesAllSourcesWithoutDuplication() {
         server.enqueue("/api/users.list", usersListJson(userJson("U1", "alice@example.com")));
         server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true)));
         server.enqueue("/api/team.info", teamInfoJson());
@@ -235,10 +238,8 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
         final List<String> roles = (List<String>) callback.getDataMaps().get(0).get("captured_roles");
         assertTrue("member role must be present", roles.contains(fessConfig.getRoleSearchUserPrefix() + "alice@example.com"));
         assertTrue("default_permissions must be encoded", roles.contains(fessConfig.getRoleSearchGroupPrefix() + "sales"));
-        assertTrue("the DataConfig permission must survive, byte-for-byte, not re-encoded", roles.contains(alreadyEncodedAdminPermission));
-        assertEquals("the {role}-prefixed literal must never appear: encoding it a second time would look like this", false,
-                roles.contains("{role}" + alreadyEncodedAdminPermission));
-        assertEquals(3, roles.size());
+        assertTrue("the DataConfig permission must survive, byte-for-byte, not omitted", roles.contains(alreadyEncodedAdminPermission));
+        assertEquals("all three sources present, none duplicated", 3, roles.size());
     }
 
     /**

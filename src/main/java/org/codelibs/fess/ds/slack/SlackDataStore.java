@@ -999,10 +999,22 @@ public class SlackDataStore extends AbstractDataStore {
      * same-named parameter does. The DataConfig permission, by contrast, was already encoded once
      * when an administrator saved it in the admin UI (F8) -- {@link
      * org.codelibs.fess.ds.AbstractDataStore#store} copies it onto {@code defaultDataMap} under
-     * {@code fessConfig.getIndexFieldRole()} before {@code storeData} ever runs -- so encoding it
-     * again here would double-encode it and corrupt the value (F9). {@code TeamsDataStore}
-     * (fess-ds-microsoft365) omits this second source entirely; that omission must not be copied
-     * (F15).
+     * {@code fessConfig.getIndexFieldRole()} before {@code storeData} ever runs -- so it is merged
+     * in as-is, not re-encoded. {@code TeamsDataStore} (fess-ds-microsoft365) omits this second
+     * source entirely; that omission must not be copied (F15).
+     * </p>
+     *
+     * <p>
+     * <b>Corrected rationale (IMPORTANT-4, whole-branch review Phase 3):</b> an earlier revision
+     * of this javadoc, and commit 43f2b3c's message, claimed re-encoding the DataConfig
+     * permission here "would corrupt it". That is wrong: {@link PermissionHelper#encode} returns
+     * any value not already starting with {@code (allow)}/{@code (deny)}/{@code {user}}/{@code
+     * {group}}/{@code {role}} unchanged, and an admin-UI-saved permission is already in that
+     * encoded form, so {@code encode} is idempotent on it -- re-encoding would be a harmless
+     * no-op, not corruption. The actual risk this merge guards against is <b>omission</b>:
+     * dropping this source (as {@code TeamsDataStore} does, F15) would silently delete the
+     * operator's admin-UI-configured permissions from every indexed document's roles, not merely
+     * fail to double-encode something that was never at risk of corruption.
      * </p>
      *
      * @param paramMap the parameter map, for {@link #DEFAULT_PERMISSIONS}
