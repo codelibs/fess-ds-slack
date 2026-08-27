@@ -57,6 +57,7 @@ import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
+import org.codelibs.fess.ds.slack.api.type.ResponseMetadata;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.codelibs.fess.entity.DataStoreParams;
@@ -1126,7 +1127,8 @@ public class SlackClient implements Closeable {
      * @param consumer the function to process each member user ID
      * @return {@code true} if every page was fetched successfully (including the zero-member
      *         case on an {@code ok:true} response with an empty list), {@code false} if a
-     *         channel-scoped error stopped the walk before it completed
+     *         channel-scoped error, or a malformed {@code ok:true} response missing {@code
+     *         members}/{@code response_metadata}, stopped the walk before it completed
      */
     public boolean getChannelMembers(final String channelId, final Consumer<String> consumer) {
         ConversationsMembersResponse response = conversationsMembers(channelId).execute();
@@ -1135,7 +1137,21 @@ public class SlackClient implements Closeable {
                 handleApiError("conversations.members", response);
                 return false;
             }
-            response.getMembers().forEach(consumer);
+            // Minor (whole-branch review, Phase 3): guarded, unlike this class's other paging
+            // methods (getAllChannels/getChannelMessages/getUsers), which would NPE the same way
+            // on a malformed ok:true response. The blast radius differs here: those callers run
+            // on storeData's own thread and an uncaught NPE there fails the whole crawl the same
+            // way a fatal SlackApiException does, whereas this method's caller
+            // (computeChannelRoles) is written to expect a plain false for "this one channel's
+            // membership could not be determined" -- an NPE escaping this method instead skips
+            // that per-channel handling entirely and fails the whole crawl.
+            final List<String> members = response.getMembers();
+            if (members == null) {
+                logger.warn("\"conversations.members\" response for channel {} carries no \"members\" field; treating this as a "
+                        + "channel-scoped failure.", channelId);
+                return false;
+            }
+            members.forEach(consumer);
             if (!aliveSupplier.getAsBoolean()) {
                 // Considered and rejected returning false here: true is the same "no error"
                 // signal getUsers/getChannelMessages already give a stop landing mid-page, and
@@ -1144,7 +1160,13 @@ public class SlackClient implements Closeable {
                 // add one -- unlike an API failure, which must not be treated as "zero members".
                 return true;
             }
-            final String nextCursor = response.getResponseMetadata().getNextCursor();
+            final ResponseMetadata responseMetadata = response.getResponseMetadata();
+            if (responseMetadata == null) {
+                logger.warn("\"conversations.members\" response for channel {} carries no \"response_metadata\" field; treating "
+                        + "this as a channel-scoped failure.", channelId);
+                return false;
+            }
+            final String nextCursor = responseMetadata.getNextCursor();
             if (nextCursor.isEmpty()) {
                 break;
             }

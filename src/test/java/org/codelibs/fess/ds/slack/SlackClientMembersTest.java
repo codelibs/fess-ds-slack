@@ -97,6 +97,37 @@ public class SlackClientMembersTest extends UnitDsTestCase {
         assertEquals(0, members.size());
     }
 
+    /**
+     * Minor (whole-branch review, Phase 3): a malformed {@code ok:true} response missing {@code
+     * members} must not NPE -- the blast radius here differs from this class's other paging
+     * methods, since an uncaught NPE would fail the whole crawl instead of just this one channel.
+     */
+    @Test
+    public void test_missingMembersFieldIsTreatedAsFailureNotNpe() {
+        server.enqueue("/api/conversations.members", SlackApiMockServer.json("{\"ok\":true}"));
+
+        final List<String> members = new ArrayList<>();
+        final boolean succeeded = newClient().getChannelMembers("C1", members::add);
+
+        assertFalse("a missing \"members\" field must be treated as a channel-scoped failure", succeeded);
+        assertEquals(0, members.size());
+    }
+
+    /**
+     * Minor (whole-branch review, Phase 3): a malformed {@code ok:true} response missing {@code
+     * response_metadata} must not NPE.
+     */
+    @Test
+    public void test_missingResponseMetadataIsTreatedAsFailureNotNpe() {
+        server.enqueue("/api/conversations.members", SlackApiMockServer.json("{\"ok\":true,\"members\":[\"U1\"]}"));
+
+        final List<String> members = new ArrayList<>();
+        final boolean succeeded = newClient().getChannelMembers("C1", members::add);
+
+        assertFalse("a missing \"response_metadata\" field must be treated as a channel-scoped failure", succeeded);
+        assertEquals(1, members.size());
+    }
+
     private SlackClient newClient() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("token", "xoxb-test");
