@@ -485,7 +485,7 @@ public class SlackDataStore extends AbstractDataStore {
                 // "this channel has zero roles" -- see computeChannelRoles and MESSAGE_ROLES.
                 List<String> roles = null;
                 if (permissionSync) {
-                    roles = computeChannelRoles(client, paramMap, defaultDataMap, channel, skippedChannelCount);
+                    roles = computeChannelRoles(client, paramMap, defaultDataMap, dataConfig, channel, skippedChannelCount);
                     if (roles == null) {
                         // Fail-closed (design plan D3): membership could not be established for
                         // this private channel, so none of its documents are indexed at all this
@@ -781,6 +781,33 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Records a channel {@link #computeChannelRoles} skipped for a fail-closed reason via {@link
+     * FailureUrlService}, so it shows up in the admin UI and survives log rotation instead of
+     * being visible only through the aggregate warning {@code storeData} logs at the end of the
+     * channel walk (IMPORTANT-2, whole-branch review Phase 3, design spec Section 6.3).
+     *
+     * <p>
+     * A channel has no permalink of its own the way a message or file does, so this constructs a
+     * synthetic identifier ({@code channelId/channelName}) rather than a real URL, matching the
+     * precedent {@link #processMessage} already sets for a message with no {@code ts}. The
+     * objection that blocked recording this from inside {@link SlackClient} does not apply here:
+     * {@code storeData} (and so {@link #computeChannelRoles}, which it calls) already has {@code
+     * dataConfig} in scope, and this class already uses {@link FailureUrlService} elsewhere
+     * ({@link #processMessage}, {@link #processFile}).
+     * </p>
+     *
+     * @param dataConfig the data configuration this crawl is running under
+     * @param channel the channel being skipped
+     * @param reason a human-readable description of why this channel is being skipped, also used
+     *            in the per-channel warning logged by the caller
+     */
+    protected void recordSkippedChannel(final DataConfig dataConfig, final Channel channel, final String reason) {
+        final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
+        failureUrlService.store(dataConfig, SlackDataStoreException.class.getCanonicalName(), channel.getId() + "/" + channel.getName(),
+                new SlackDataStoreException(reason));
+    }
+
+    /**
      * Computes the search roles allowed to see {@code channel}'s content, or signals that the
      * channel must be skipped entirely this crawl. Only called when {@link #PERMISSION_SYNC} is
      * enabled (see {@code storeData}).
@@ -824,6 +851,8 @@ public class SlackDataStore extends AbstractDataStore {
      * @param client the Slack client, for {@code conversations.members} and cached user lookups
      * @param paramMap the parameter map, for {@link #DEFAULT_PERMISSIONS}
      * @param defaultDataMap the default data map, for the DataConfig-level permission (F8/F9)
+     * @param dataConfig the data configuration, for recording a skipped channel via {@link
+     *            FailureUrlService} (IMPORTANT-2, whole-branch review Phase 3)
      * @param channel the channel to compute roles for
      * @param skippedChannelCount incremented when this channel is skipped for any fail-closed
      *            reason above
@@ -831,22 +860,27 @@ public class SlackDataStore extends AbstractDataStore {
      *         {@code null} if this channel must not be indexed this crawl
      */
     protected List<String> computeChannelRoles(final SlackClient client, final DataStoreParams paramMap,
-            final Map<String, Object> defaultDataMap, final Channel channel, final AtomicInteger skippedChannelCount) {
+            final Map<String, Object> defaultDataMap, final DataConfig dataConfig, final Channel channel,
+            final AtomicInteger skippedChannelCount) {
         final List<String> roles = new ArrayList<>();
         if (channel.isPrivate()) {
             final List<String> memberIds = new ArrayList<>();
             final boolean succeeded = client.getChannelMembers(channel.getId(), memberIds::add);
             if (!succeeded) {
                 skippedChannelCount.incrementAndGet();
-                logger.warn("Failed to get the members of private channel \"{}\" ({}); this channel will not be indexed this crawl "
-                        + "(permission_sync fails closed on a members lookup failure).", channel.getName(), channel.getId());
+                final String reason = "Failed to get the members of private channel \"" + channel.getName() + "\" (" + channel.getId()
+                        + "); permission_sync fails closed on a members lookup failure.";
+                logger.warn("{} This channel will not be indexed this crawl.", reason);
+                recordSkippedChannel(dataConfig, channel, reason);
                 return null;
             }
             if (memberIds.isEmpty()) {
                 skippedChannelCount.incrementAndGet();
-                logger.warn("Private channel \"{}\" ({}) reported zero members, which is anomalous -- the crawling token's own bot "
-                        + "user must itself be a member to read a private channel at all; this channel will not be indexed this "
-                        + "crawl (permission_sync fails closed on an empty membership).", channel.getName(), channel.getId());
+                final String reason = "Private channel \"" + channel.getName() + "\" (" + channel.getId() + ") reported zero members, "
+                        + "which is anomalous -- the crawling token's own bot user must itself be a member to read a private "
+                        + "channel at all; permission_sync fails closed on an empty membership.";
+                logger.warn("{} This channel will not be indexed this crawl.", reason);
+                recordSkippedChannel(dataConfig, channel, reason);
                 return null;
             }
             int resolvedCount = 0;
@@ -866,10 +900,11 @@ public class SlackDataStore extends AbstractDataStore {
                 // memberIds is guaranteed non-empty here: the isEmpty() case above already
                 // returned.
                 skippedChannelCount.incrementAndGet();
-                logger.warn(
-                        "Private channel \"{}\" ({}) has {} member(s) but none resolved to an email; this channel will not be "
-                                + "indexed this crawl. This usually means the token is missing the users:read.email scope.",
-                        channel.getName(), channel.getId(), memberIds.size());
+                final String reason = "Private channel \"" + channel.getName() + "\" (" + channel.getId() + ") has " + memberIds.size()
+                        + " member(s) but none resolved to an email; permission_sync fails closed. This usually means the token is "
+                        + "missing the users:read.email scope.";
+                logger.warn("{} This channel will not be indexed this crawl.", reason);
+                recordSkippedChannel(dataConfig, channel, reason);
                 return null;
             }
         }

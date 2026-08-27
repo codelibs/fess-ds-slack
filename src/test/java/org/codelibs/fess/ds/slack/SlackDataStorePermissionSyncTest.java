@@ -367,6 +367,37 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
     }
 
     /**
+     * IMPORTANT-2 (whole-branch review, Phase 3, design spec Section 6.3): a skipped channel must
+     * be recorded via {@code FailureUrlService}, not only warned about, so it is queryable in the
+     * admin UI and survives log rotation.
+     */
+    @Test
+    public void test_skippedChannelIsRecordedInFailureUrlService() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.members", SlackApiMockServer.json("{\"ok\":false,\"error\":\"channel_not_found\"}"));
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+        paramMap.put("include_private", "true");
+
+        final List<String> recordedUrls = new ArrayList<>();
+        ComponentUtil.register(new FailureUrlService() {
+            @Override
+            public FailureUrl store(final CrawlingConfig crawlingConfig, final String errorName, final String url, final Throwable e) {
+                recordedUrls.add(url);
+                return null;
+            }
+        }, FailureUrlService.class.getCanonicalName());
+
+        dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), paramMap, new HashMap<>(), new HashMap<>());
+
+        assertEquals("the skipped channel must be recorded via FailureUrlService", 1, recordedUrls.size());
+        assertTrue("the recorded identifier must name the skipped channel", recordedUrls.get(0).contains("C1"));
+    }
+
+    /**
      * D1: permission_sync=false plus include_private=true indexes private-channel content under
      * DataConfig permissions alone -- a de facto publish switch when that permission field is
      * left empty -- so this combination must warn, once per crawl, without being forbidden
