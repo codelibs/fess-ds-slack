@@ -41,6 +41,8 @@ import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryR
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListResponse;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsMembersRequest;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsMembersResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesResponse;
 import org.codelibs.fess.ds.slack.api.method.files.FilesInfoRequest;
@@ -384,6 +386,16 @@ public class SlackClient implements Closeable {
     }
 
     /**
+     * Creates a conversations.members API request builder.
+     *
+     * @param channel the channel ID
+     * @return a new ConversationsMembersRequest instance
+     */
+    public ConversationsMembersRequest conversationsMembers(final String channel) {
+        return new ConversationsMembersRequest(requestContext, channel);
+    }
+
+    /**
      * Creates a conversations.replies API request builder.
      *
      * @param channel the channel ID or name
@@ -668,8 +680,9 @@ public class SlackClient implements Closeable {
     /**
      * Classifies a failed ({@code ok: false}) Slack API response and reacts accordingly. Used by
      * every one of this class's paginated calls (files.list, conversations.list,
-     * conversations.history, conversations.replies, users.list) so the "what does this error
-     * code mean" decision lives in one place instead of five copies of the same switch.
+     * conversations.history, conversations.replies, conversations.members, users.list) so the
+     * "what does this error code mean" decision lives in one place instead of six copies of the
+     * same switch.
      *
      * <p>
      * Four outcomes, in order:
@@ -1075,6 +1088,40 @@ public class SlackClient implements Closeable {
                 break;
             }
             response = usersList().limit(limit).cursor(nextCursor).execute();
+        }
+    }
+
+    /**
+     * Retrieves the member user IDs of a specific channel using {@code conversations.members}.
+     *
+     * <p>
+     * This is the only Slack Web API method that actually returns channel membership --
+     * {@code conversations.list} and {@code conversations.info} never populate {@link
+     * org.codelibs.fess.ds.slack.api.type.Channel#getMembers()} (see that method's javadoc) --
+     * so a caller needing to know who can see a channel must call this explicitly, once per
+     * channel, rather than reading it off an already-fetched {@link
+     * org.codelibs.fess.ds.slack.api.type.Channel}.
+     * </p>
+     *
+     * @param channelId the channel ID
+     * @param consumer the function to process each member user ID
+     */
+    public void getChannelMembers(final String channelId, final Consumer<String> consumer) {
+        ConversationsMembersResponse response = conversationsMembers(channelId).execute();
+        while (true) {
+            if (!response.ok()) {
+                handleApiError("conversations.members", response);
+                return;
+            }
+            response.getMembers().forEach(consumer);
+            if (!aliveSupplier.getAsBoolean()) {
+                return;
+            }
+            final String nextCursor = response.getResponseMetadata().getNextCursor();
+            if (nextCursor.isEmpty()) {
+                break;
+            }
+            response = conversationsMembers(channelId).cursor(nextCursor).execute();
         }
     }
 
