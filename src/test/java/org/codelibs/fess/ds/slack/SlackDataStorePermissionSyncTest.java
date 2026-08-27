@@ -290,6 +290,101 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
         }
     }
 
+    /**
+     * D1: permission_sync=false plus include_private=true indexes private-channel content under
+     * DataConfig permissions alone -- a de facto publish switch when that permission field is
+     * left empty -- so this combination must warn, once per crawl, without being forbidden
+     * (existing operators run with it today; forbidding it would be a breaking change).
+     */
+    @Test
+    public void test_warnsOncePermissionSyncDisabledAndIncludePrivateEnabled() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true), channelJson("C2", "hush", true)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.history", historyJson());
+        server.enqueue("/api/conversations.history", historyJson());
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("include_private", "true");
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), paramMap, new HashMap<>(), new HashMap<>());
+
+            final List<String> permissionSyncWarnings = appender.messagesAt(org.apache.logging.log4j.Level.WARN)
+                    .stream()
+                    .filter(m -> m.contains("permission_sync") && m.contains("include_private"))
+                    .collect(java.util.stream.Collectors.toList());
+            assertEquals("exactly one aggregate warning per crawl, not one per channel", 1, permissionSyncWarnings.size());
+        } finally {
+            appender.detach();
+        }
+    }
+
+    /** The combination is not forbidden: storeData must still index normally, not throw. */
+    @Test
+    public void test_permissionSyncDisabledAndIncludePrivateEnabledStillIndexes() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.history",
+                historyJson(messageJson("Hello", "1111111111.000100", "https://example.slack.com/archives/C1/p1111111111000100")));
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("include_private", "true");
+
+        final TestIndexUpdateCallback callback = new TestIndexUpdateCallback();
+        dataStore.storeData(new DataConfig(), callback, paramMap, new HashMap<>(), new HashMap<>());
+
+        assertEquals(1, callback.size());
+    }
+
+    /** permission_sync=true plus include_private=true is the recommended combination: no warning. */
+    @Test
+    public void test_noWarningWhenPermissionSyncEnabled() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "general", false)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.history", historyJson());
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("include_private", "true");
+        paramMap.put("permission_sync", "true");
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), paramMap, new HashMap<>(), new HashMap<>());
+
+            assertFalse("permission_sync=true must not trigger the D1 warning",
+                    appender.messagesAt(org.apache.logging.log4j.Level.WARN)
+                            .stream()
+                            .anyMatch(m -> m.contains("permission_sync") && m.contains("include_private")));
+        } finally {
+            appender.detach();
+        }
+    }
+
+    /** include_private unset (or false) must not trigger the D1 warning either. */
+    @Test
+    public void test_noWarningWhenIncludePrivateDisabled() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "general", false)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.history", historyJson());
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), baseParamMap(), new HashMap<>(), new HashMap<>());
+
+            assertFalse("include_private disabled must not trigger the D1 warning",
+                    appender.messagesAt(org.apache.logging.log4j.Level.WARN)
+                            .stream()
+                            .anyMatch(m -> m.contains("permission_sync") && m.contains("include_private")));
+        } finally {
+            appender.detach();
+        }
+    }
+
     private DataStoreParams baseParamMap() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("token", "xoxb-test");

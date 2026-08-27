@@ -418,6 +418,18 @@ public class SlackDataStore extends AbstractDataStore {
             final Team team = client.getTeam();
             final boolean fileCrawl = (Boolean) configMap.get(FILE_CRAWL);
             final boolean permissionSync = (Boolean) configMap.get(PERMISSION_SYNC);
+            // D1: this combination is not forbidden -- an existing operator may already run with
+            // it, and forbidding it would be a breaking change -- but it is worth calling out
+            // once per crawl: every private channel's content is indexed under only the
+            // DataConfig-level permissions configured for this crawl, not per-channel
+            // membership, which is a de facto publish switch if that permission field happens to
+            // be left empty.
+            if (!permissionSync && Boolean.TRUE.equals(client.includePrivate)) {
+                logger.warn("permission_sync is disabled but include_private is enabled: private channel content will be indexed "
+                        + "using only the DataConfig-level permissions configured for this crawl, not each channel's own "
+                        + "membership. Set permission_sync=true to restrict each private channel's documents to that channel's "
+                        + "members.");
+            }
             client.getChannels(channel -> {
                 // Checked here, not only inside SlackClient's paging loops: this is the loop that
                 // decides whether to dispatch the *next* channel at all, so stopping here skips
