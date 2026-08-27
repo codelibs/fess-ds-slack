@@ -108,17 +108,19 @@ import com.google.common.util.concurrent.UncheckedExecutionException;
  * {@link org.codelibs.fess.ds.slack.api.Response#retriesExhausted()} -- see that method's
  * javadoc for why this layer does not decide fatal-vs-skip itself.</li>
  * <li><b>Body classification</b> ({@link SlackClient#handleApiError}): every paginated call
- * (files.list, conversations.list, conversations.history, conversations.replies, users.list)
- * routes its {@code ok:false} body here. A code in {@link SlackClient#FATAL_ERROR_CODES} (the
- * token itself cannot authenticate) or {@link SlackClient#TRANSIENT_ERROR_CODES} (a transient
- * server-side condition, not a property of the specific channel/page), or a response with
- * {@code retriesExhausted()} set regardless of its code, throws {@link
- * org.codelibs.fess.ds.slack.api.SlackApiException}. Everything else is warned and skipped for
- * just that channel/page.</li>
+ * (files.list, conversations.list, conversations.history, conversations.replies,
+ * conversations.members, users.list) routes its {@code ok:false} body here. A code in
+ * {@link SlackClient#FATAL_ERROR_CODES} (the token itself cannot authenticate) or
+ * {@link SlackClient#TRANSIENT_ERROR_CODES} (a transient server-side condition, not a property
+ * of the specific channel/page), or a response with {@code retriesExhausted()} set regardless of
+ * its code, throws {@link org.codelibs.fess.ds.slack.api.SlackApiException}. Everything else is
+ * warned and skipped for just that channel/page.</li>
  * <li><b>Propagation or worker latching</b>: a {@link org.codelibs.fess.ds.slack.api.SlackApiException}
  * thrown on {@link #storeData}'s own thread (files.list, conversations.list,
- * conversations.history, users.list, and the constructor's preload of both listing calls)
- * propagates directly out of {@link #storeData}. One raised on a worker thread dispatched by
+ * conversations.history, users.list, the constructor's preload of both listing calls, and
+ * conversations.members -- called from {@link #computeChannelRoles}, itself invoked
+ * synchronously from the channel-walk callback passed to {@code client.getChannels}, never from
+ * a worker thread) propagates directly out of {@link #storeData}. One raised on a worker thread dispatched by
  * {@link #processChannelMessages}/{@link #processChannelFiles} (conversations.replies via {@link
  * #processMessageReplies}) cannot reach the submitting thread that way -- {@link
  * java.util.concurrent.ThreadPoolExecutor} swallows an uncaught exception from its {@code
@@ -260,6 +262,22 @@ public class SlackDataStore extends AbstractDataStore {
      * a significant, surprising change in what search results a user sees, so it is not the
      * default. See {@link #isPermissionSync} and this class's fail-closed handling in {@link
      * #computeChannelRoles}.
+     * </p>
+     *
+     * <p>
+     * <b>This parameter only computes roles; the crawl script must still apply them.</b> The
+     * roles computed here reach the indexed document only by way of {@link #MESSAGE_ROLES}
+     * ({@code message.roles}) in {@code scriptMap} -- typically {@code role=message.roles} (see
+     * this module's README). Nothing in this class applies them on its own. A script that omits
+     * that mapping silently discards every role this parameter computes: the document is indexed
+     * under whatever {@code role} value the script otherwise supplies (commonly none), exactly as
+     * unrestricted as if this parameter were {@code false} -- except that turning it {@code true}
+     * still pays for {@code conversations.members} calls, still skips a private channel that
+     * fails role resolution (a real cost with no offsetting benefit), and still silences the
+     * {@link #isPermissionSync}-off-plus-{@code include_private} warning that would otherwise
+     * flag this exact situation, since that warning cannot see whether a script actually consumes
+     * the roles it computed. See {@code storeData}'s startup warning for the best-effort check
+     * this class runs for that omission.
      * </p>
      */
     protected static final String PERMISSION_SYNC = "permission_sync";
@@ -429,6 +447,22 @@ public class SlackDataStore extends AbstractDataStore {
                         + "using only the DataConfig-level permissions configured for this crawl, not each channel's own "
                         + "membership. Set permission_sync=true to restrict each private channel's documents to that channel's "
                         + "members.");
+            }
+            // Critical (whole-branch review, Phase 3): permission_sync only computes roles and
+            // exposes them as message.roles (see MESSAGE_ROLES) -- nothing applies them to the
+            // indexed document unless scriptMap itself maps them, typically role=message.roles.
+            // A crawl config that forgets that mapping pays every cost of this feature (extra
+            // conversations.members calls, private channels skipped on a fail-closed membership
+            // lookup) for zero benefit: every document is indexed exactly as unrestricted as
+            // before. This is a best-effort textual check, not proof the script actually uses the
+            // roles correctly -- a script could reference message.roles and still discard it, or
+            // reference it only in an unrelated expression -- but a scriptMap with no mention of
+            // it at all is unambiguously the silent-no-op case this converts into a loud one.
+            if (permissionSync && scriptMap.values().stream().noneMatch(value -> value != null && value.contains("message.roles"))) {
+                logger.warn("permission_sync is enabled, but no script value references message.roles: the per-channel/file roles "
+                        + "this computes will be silently discarded and every document will be indexed without them, exactly as if "
+                        + "permission_sync were disabled. Add role=message.roles to this crawl's scripts to apply them. See this "
+                        + "module's README for details.");
             }
             client.getChannels(channel -> {
                 // Checked here, not only inside SlackClient's paging loops: this is the loop that

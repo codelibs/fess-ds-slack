@@ -70,6 +70,7 @@ content=message.text
 created=message.timestamp
 timestamp=message.timestamp
 url=message.permalink
+role=message.roles
 ```
 
 | Key | Value |
@@ -80,3 +81,37 @@ url=message.permalink
 | message.timestamp | Timestamp the Message sent. |
 | message.permalink | Permalink of the Message. |
 | message.attachments | Fallback of attachments of the Message. |
+| message.roles | Search roles allowed to see this document. Only present when `permission_sync=true` (see below); a script that omits `role=message.roles` never applies them, so the document is indexed exactly as unrestricted as if `permission_sync` were off. |
+
+### Permission Synchronisation (ACL)
+
+| Key | Default | Value |
+| --- | --- | --- |
+| permission_sync | `false` | `true` or `false`. When `true`, each private channel's membership is resolved into search roles (one per member, by email) so its content is searchable only by that channel's members. A channel whose membership cannot be reliably resolved is skipped entirely for that crawl (fail-closed) rather than indexed without a working access control list. |
+| default_permissions | unset | Comma-separated list of additional permissions, in the admin UI's `{user}name` / `{group}name` / `{role}name` syntax, applied to every document regardless of channel membership. |
+
+**`permission_sync` only computes roles; it does not apply them.** The computed roles are exposed
+to crawl scripts as `message.roles` (see the Scripts table above) -- your script must map
+`role=message.roles` for them to take effect. Without that mapping, `permission_sync=true` costs
+API calls and can skip private channels that fail role resolution, while providing none of the
+access control it promises.
+
+**Required Slack OAuth scope**: resolving a member's email requires the `users:read.email` scope
+on the token. Without it, `Profile#getEmail()` returns `null` for every member, so a private
+channel with members still fails closed (see the `users:read.email` warning in the log) instead
+of being indexed unrestricted.
+
+**The Fess principal name must equal the Slack email, and lowercase.** Search-time roles come
+from `principal.getName()` (the Fess login name) with no normalisation; the roles this feature
+computes come from each member's Slack email. Slack itself normalises email addresses to
+lowercase, so if Fess login names are not also lowercase, the two will never match for any user
+with an uppercase character in their login name. This fails closed -- a mismatched user simply
+sees no results, not someone else's private content -- but it presents as "search silently
+returns nothing" for private-channel content, which is easy to mistake for an unrelated bug.
+Keep Fess login names lowercase to avoid this.
+
+**Enabling this feature does not retroactively secure an already-indexed workspace.** Documents
+indexed by an earlier `permission_sync=false` crawl remain unrestricted in the index; nothing
+removes or re-indexes them automatically. A full re-crawl with `permission_sync=true` (and a
+script that maps `role=message.roles`) is required to apply roles to previously-indexed content.
+Likewise, turning `permission_sync` back off does not restore any restriction on the next crawl.

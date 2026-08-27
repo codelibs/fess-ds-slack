@@ -241,6 +241,50 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
         assertEquals(3, roles.size());
     }
 
+    /**
+     * CRITICAL (whole-branch review, Phase 3): {@code permission_sync}'s computed roles reach the
+     * indexed document only through an explicit {@code role=message.roles} script mapping (see
+     * {@code PERMISSION_SYNC}'s javadoc) -- a script that never references {@code message.roles},
+     * such as the README's own pre-fix example (title/digest/content/created/timestamp/url), pins
+     * the per-channel member roles right where {@code storeData} computed them, then never applies
+     * them: only the DataConfig-level permission already carried on {@code defaultDataMap} --
+     * copied into {@code dataMap} verbatim before any script runs -- survives into the indexed
+     * "role" field.
+     */
+    @Test
+    public void test_computedRolesAreDiscardedWithoutAnExplicitRoleScriptMapping() {
+        server.enqueue("/api/users.list", usersListJson(userJson("U1", "alice@example.com")));
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.members", membersJson("U1"));
+        server.enqueue("/api/conversations.history",
+                historyJson(messageJson("Hello", "1111111111.000100", "https://example.slack.com/archives/C1/p1111111111000100")));
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+        paramMap.put("include_private", "true");
+
+        // The README's own example script -- title/digest/content/created/timestamp/url -- never
+        // maps role=message.roles.
+        final Map<String, String> scriptMap = new HashMap<>();
+        scriptMap.put("title", "message.user");
+        scriptMap.put("content", "message.text");
+        scriptMap.put("url", "message.permalink");
+
+        final FessConfig fessConfig = ComponentUtil.getFessConfig();
+        final Map<String, Object> defaultDataMap = new HashMap<>();
+        final String dataConfigPermission = fessConfig.getRoleSearchRolePrefix() + "admin";
+        defaultDataMap.put(fessConfig.getIndexFieldRole(), new ArrayList<>(List.of(dataConfigPermission)));
+
+        final TestIndexUpdateCallback callback = new TestIndexUpdateCallback();
+        dataStore.storeData(new DataConfig(), callback, paramMap, scriptMap, defaultDataMap);
+
+        assertEquals(1, callback.size());
+        @SuppressWarnings("unchecked")
+        final List<String> role = (List<String>) callback.getDataMaps().get(0).get(fessConfig.getIndexFieldRole());
+        assertEquals(List.of(dataConfigPermission), role);
+    }
+
     /** 6: fail-closed -- a private channel whose membership could not be fetched is not indexed. */
     @Test
     public void test_failClosedWhenMembersLookupFails() {
