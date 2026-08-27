@@ -18,6 +18,7 @@ package org.codelibs.fess.ds.slack.api.type;
 import java.util.List;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
@@ -38,11 +39,29 @@ public class Channel {
     protected String id;
     /** Display name of the channel. */
     protected String name;
-    /** Whether this is a channel (as opposed to a direct message). */
+    /**
+     * Whether this is a channel (as opposed to a direct message).
+     *
+     * <p>
+     * {@code @JsonProperty("is_channel")} is required, not merely the class-level {@link
+     * JsonNaming} strategy: Jackson has no public field to key off (this one is {@code
+     * protected}, invisible under the default {@code PUBLIC_ONLY} field visibility), so it
+     * derives the property name from the {@code is}-prefixed getter {@link #isChannel()} by
+     * stripping the {@code is} prefix -- yielding the bare name {@code "channel"}, which {@link
+     * JsonNaming}'s snake-case strategy leaves unchanged since it has no internal case boundary
+     * to split on. Without this annotation, this field silently never deserializes from Slack's
+     * actual {@code is_channel} field and this accessor always returns {@code false}. Verified
+     * empirically: {@code new ObjectMapper().writeValueAsString(channel)} showed {@code
+     * "channel":...}, not {@code "is_channel":...}, before this annotation was added.
+     * </p>
+     */
+    @JsonProperty("is_channel")
     protected Boolean isChannel;
-    /** Whether the channel has been archived. */
+    /** Whether the channel has been archived. See {@link #isChannel}'s javadoc for why this annotation is required. */
+    @JsonProperty("is_archived")
     protected Boolean isArchived;
-    /** Whether the channel is private. */
+    /** Whether the channel is private. See {@link #isChannel}'s javadoc for why this annotation is required. */
+    @JsonProperty("is_private")
     protected Boolean isPrivate;
 
     /** List of member user IDs in the channel. */
