@@ -40,9 +40,16 @@ public class TestIndexUpdateCallback implements IndexUpdateCallback {
 
     private final List<Map<String, Object>> dataMaps = Collections.synchronizedList(new ArrayList<>());
 
+    private final List<DataStoreParams> paramMaps = Collections.synchronizedList(new ArrayList<>());
+
     @Override
     public void store(final DataStoreParams paramMap, final Map<String, Object> dataMap) {
         dataMaps.add(new HashMap<>(dataMap));
+        // Deliberately the live reference, not a copy: the point of recording it is to let a
+        // test assert which instance arrived -- that each document brought its own copy and
+        // that the shared one was never handed over. A defensive copy here would make both
+        // assertions unwritable.
+        paramMaps.add(paramMap);
     }
 
     @Override
@@ -67,6 +74,16 @@ public class TestIndexUpdateCallback implements IndexUpdateCallback {
      */
     public List<Map<String, Object>> getDataMaps() {
         return new ArrayList<>(dataMaps);
+    }
+
+    /**
+     * Returns a snapshot of the {@link DataStoreParams} instances handed to {@link #store}, in
+     * call order. The elements are the instances themselves, not copies.
+     *
+     * @return the recorded parameter instances
+     */
+    public List<DataStoreParams> getParamMaps() {
+        return new ArrayList<>(paramMaps);
     }
 
     /**
