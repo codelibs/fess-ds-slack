@@ -87,8 +87,8 @@ role=message.roles
 
 | Key | Default | Value |
 | --- | --- | --- |
-| permission_sync | `false` | `true` or `false`. When `true`, each private channel's membership is resolved into search roles (one per member, by email) so its content is searchable only by that channel's members. A channel whose membership cannot be reliably resolved is skipped entirely for that crawl (fail-closed) rather than indexed without a working access control list. |
-| default_permissions | unset | Comma-separated list of additional permissions, in the admin UI's `{user}name` / `{group}name` / `{role}name` syntax, applied to every document regardless of channel membership. |
+| permission_sync | `false` | `true` or `false`. When `true`, each private channel's membership is resolved into search roles (one per member, by email) and exposed to the crawl script as `message.roles`. A channel whose membership cannot be reliably resolved is skipped entirely for that crawl (fail-closed) rather than indexed without a working access control list. |
+| default_permissions | unset | Comma-separated list of additional permissions, in the admin UI's `{user}name` / `{group}name` / `{role}name` syntax, added to every document's roles. Read **only** when `permission_sync=true`; ignored otherwise. Like every role computed here, it reaches the document only if the script maps `role=message.roles`, and not at all for a channel that failed closed -- nothing from such a channel is indexed. |
 
 **`permission_sync` only computes roles; it does not apply them.** The computed roles are exposed
 to crawl scripts as `message.roles` (see the Scripts table above) -- your script must map
@@ -96,8 +96,49 @@ to crawl scripts as `message.roles` (see the Scripts table above) -- your script
 API calls and can skip private channels that fail role resolution, while providing none of the
 access control it promises.
 
-**Required Slack OAuth scope**: resolving a member's email requires the `users:read.email` scope
-on the token. Without it, `Profile#getEmail()` returns `null` for every member, so a private
+**The computed roles are added to your other permissions, not substituted for them.** A
+document's roles are the union of three sources: the channel's member roles (private channels
+only), `default_permissions`, and this crawl's DataConfig **Permissions** field as saved in the
+admin UI. A document in Fess is visible to anyone holding **any** one of its roles, so each
+source can only widen that document's audience -- none of them narrows it.
+
+**Warning: the admin UI pre-fills the Permissions field with `{role}guest`.** A new Data Store
+config's **Permissions** field is pre-filled from `role.search.default.display.permissions`,
+whose default is `{role}guest`, and `role.search.guest.permissions` hands that same permission to
+every anonymous searcher. Left at that default it is merged into every document's roles,
+private-channel documents included, so their content stays readable by anyone and
+`permission_sync` buys nothing. For a data store crawling private channels, clear that field or
+set it to a suitably restricted role. This data store warns at crawl start when the field grants
+nothing beyond guest *and* `permission_sync` is off with `include_private` on; it does not warn
+when `permission_sync` is on, where the roles are computed correctly and then widened by that
+same field.
+
+**A public channel contributes no roles of its own.** Public channels are treated as visible to
+the whole workspace and are never queried for membership, so with `permission_sync=true` their
+documents carry only `default_permissions` plus the DataConfig **Permissions** field. If both are
+empty, those documents are indexed with an empty role list -- which matches no search-time role
+query at all, making them findable by nobody rather than by everybody. Set one of the two to the
+audience that should see public-channel content; this data store warns once at crawl start when
+neither is set.
+
+**Required Slack OAuth scopes** (bot token):
+
+| Scope | Required when | Used by |
+| --- | --- | --- |
+| `channels:read` | always | `conversations.list`, `conversations.info`; also `conversations.members`, which only `permission_sync=true` calls |
+| `channels:history` | always | `conversations.history`, `conversations.replies` |
+| `users:read` | always | `users.list`, `users.info`, `bots.info` |
+| `team:read` | always | `team.info` |
+| `groups:read` | `include_private=true` | the same `conversations.*` read methods, for private channels |
+| `groups:history` | `include_private=true` | `conversations.history`, `conversations.replies`, for private channels |
+| `files:read` | `file_crawl=true` | `files.list`, `files.info`, and the file download itself |
+| `users:read.email` | `permission_sync=true` | the profile `email` field; Slack requires it alongside `users:read` |
+
+Only `public_channel` (plus `private_channel` when `include_private=true`) is requested from
+`conversations.list`, so no `im:*` / `mpim:*` scopes are needed; `chat.getPermalink` requires no
+scope of its own.
+
+Without `users:read.email`, `Profile#getEmail()` returns `null` for every member, so a private
 channel with members still fails closed (see the `users:read.email` warning in the log) instead
 of being indexed unrestricted.
 

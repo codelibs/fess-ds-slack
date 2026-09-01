@@ -254,7 +254,21 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String READ_INTERVAL = "read_interval";
     /**
      * Parameter name for enabling ACL synchronisation: resolving each private channel's
-     * membership into search roles so its content is searchable only by that channel's members.
+     * membership into search roles and exposing them to the crawl script as {@link
+     * #MESSAGE_ROLES}.
+     *
+     * <p>
+     * <b>Not "searchable only by that channel's members".</b> The member roles are <em>added</em>
+     * to {@link #DEFAULT_PERMISSIONS} and to this crawl's DataConfig permission (see {@link
+     * #mergeAdditionalRoles}), and a Fess document is visible to anyone holding any one of its
+     * roles -- so a private channel's content is searchable by its members <em>plus</em> whoever
+     * those two sources name. That is the additive convention {@code
+     * Microsoft365DataStore#mergeDefaultRoles} sets for {@code OneDriveDataStore} and {@code
+     * TeamsDataStore} (fess-ds-microsoft365), and dropping the DataConfig source would silently
+     * discard an operator's admin-UI permissions (F15). It does mean the admin UI's pre-filled
+     * {@code {role}guest} defeats this parameter unless the operator clears that field; see this
+     * module's README.
+     * </p>
      *
      * <p>
      * Defaults to {@code false} (opt-in). Turning this on for a workspace with content already
@@ -285,7 +299,15 @@ public class SlackDataStore extends AbstractDataStore {
     /**
      * Parameter name for a comma-separated list of additional permissions -- in the same
      * {@code {user}}/{@code {group}}/{@code {role}}-prefixed syntax the admin UI's own permission
-     * fields use -- applied to every document regardless of channel membership.
+     * fields use -- added to every document's roles, whatever channel it came from.
+     *
+     * <p>
+     * Read only when {@link #PERMISSION_SYNC} is enabled: {@link #mergeAdditionalRoles} is called
+     * from {@link #computeChannelRoles} and nowhere else, so with {@code permission_sync} off
+     * this parameter is ignored entirely. Like every role computed there, it reaches the indexed
+     * document only through an explicit {@code role=message.roles} script mapping, and not at all
+     * for a channel that failed closed -- nothing from such a channel is indexed.
+     * </p>
      *
      * <p>
      * Unlike the per-channel member roles this phase computes, and the DataConfig-level
@@ -1060,8 +1082,9 @@ public class SlackDataStore extends AbstractDataStore {
      * <p>
      * A literal emptiness test, deliberately: it answers "would a document computed from this
      * field alone carry no roles at all", which is what {@code storeData}'s
-     * documents-findable-by-nobody warning turns on. It is not what the D1 warning turns on -- a field holding only guest permissions is populated, so this returns
-     * {@code false} for it, yet it restricts nothing -- so that warning is gated on {@link
+     * documents-findable-by-nobody warning turns on. It is not what the D1 warning turns on -- a
+     * field holding only guest permissions is populated, so this returns {@code false} for it,
+     * yet it restricts nothing -- so that warning is gated on {@link
      * #isDataConfigPermissionGuestOnly} instead.
      * </p>
      *
