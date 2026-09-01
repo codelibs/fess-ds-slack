@@ -440,9 +440,10 @@ public class SlackDataStore extends AbstractDataStore {
         // -- files.list?channel=... returns the same file for every channel it is shared into --
         // unlike a message's permalink, which is always channel-scoped. Accumulates, per file
         // URL, the union of every channel's roles seen so far this crawl, so a file shared into
-        // both a private and a public channel ends up restricted to (at least) the private
-        // channel's members regardless of which channel conversations.list happens to walk last
-        // -- not controllable by an operator. See mergeFileRoles.
+        // both a private and a public channel stays visible to (at least) the private channel's
+        // members regardless of which channel conversations.list happens to walk last -- not
+        // controllable by an operator. A union of allowed principals is less restrictive, not
+        // more; see mergeFileRoles for what that does and does not buy.
         final Map<String, List<String>> fileRolesByUrl = new ConcurrentHashMap<>();
         // A supplier over both flags rather than a one-time snapshot, so a stop that lands after
         // this client is constructed is still seen by every paging loop SlackClient runs
@@ -1065,24 +1066,47 @@ public class SlackDataStore extends AbstractDataStore {
      * while {@link #getMessagePermalink} always returns a channel-scoped URL. Without this, a
      * file shared into both a private and a public channel would be indexed under whichever
      * channel {@link #processChannelFiles} happened to walk last -- {@code conversations.list}
-     * order, not controllable by an operator -- silently dropping a private channel's
-     * restriction if it happened to be walked first. Unioning instead of overwriting means a
-     * shared file only ever ends up <em>more</em> restrictive than either channel alone would
-     * require, never less: the safe direction to be wrong in.
+     * order, not controllable by an operator.
      * </p>
      *
      * <p>
-     * {@link ConcurrentHashMap#merge} makes the read-union-write sequence atomic per URL, which
-     * closes the race in the common, default ({@code number_of_threads=1}) case entirely: within
-     * a single-threaded crawl, channels are walked strictly in sequence, so the last channel to
-     * process a given shared file always sees every earlier channel's contribution already
-     * recorded. With {@code number_of_threads > 1}, two channels' copies of the same shared file
-     * can be processed by different worker threads at effectively the same time; this still
-     * guarantees each individual merge is atomic (no lost update to {@code fileRolesByUrl}
-     * itself), but does not guarantee the <em>later</em> of two overlapping {@code callback.store}
-     * calls for that URL is the one carrying the fuller, merged role set -- a narrow residual race
-     * accepted here rather than serializing all file processing for that URL (including its
-     * content extraction and download) to close it completely, which would be a disproportionate
+     * <b>What the union actually is (correcting an earlier revision of this javadoc):</b> these
+     * are <em>allowed</em> principals, so unioning two channels' role sets is strictly
+     * <em>less</em> restrictive than either set alone, not more -- a file shared into a private
+     * and a public channel ends up visible to the private channel's members <em>and</em> to
+     * whoever holds the public channel's roles. That is the intended behaviour, and it matches
+     * Slack itself, where such a file is visible from every channel it is shared into; what it is
+     * not is a way to hold a file to the private channel's restriction once it has also been
+     * shared publicly. What the union buys over overwriting is determinism: the stored role set no
+     * longer depends on which channel was walked last, so it can neither drop the private
+     * channel's members (public channel last, its roles overwriting theirs) nor retain them by
+     * luck (private channel last).
+     * </p>
+     *
+     * <p>
+     * {@link ConcurrentHashMap#merge} makes the read-union-write sequence atomic per URL, so no
+     * channel's contribution to {@code fileRolesByUrl} is ever lost. It does not order the {@code
+     * callback.store} calls that follow, and there is no thread count at which it would not have
+     * to: {@link #newFixedThreadPool} builds a {@link ThreadPoolExecutor} whose queue holds only
+     * {@code nThreads} tasks, with {@link ThreadPoolExecutor.CallerRunsPolicy}, so even the
+     * default {@code number_of_threads=1} runs tasks on two threads -- once the single worker is
+     * busy and the one queue slot is full, {@code execute} rejects and the submitting thread runs
+     * the task itself. Measured against that exact construction: tasks ran on {@code
+     * [pool-1-thread-1, main]}, two of them at once. A single-threaded crawl is not a
+     * configuration this class has.
+     * </p>
+     *
+     * <p>
+     * Nor is the window between a thread's merge and its store narrow: in between, the thread runs
+     * the whole {@code scriptMap} evaluation loop and then {@code IndexUpdateCallbackImpl#store},
+     * whose first statement is {@code SystemHelper#calibrateCpuLoad()} -- which, under the default
+     * {@code adaptive.load.control=50}, sleeps until system CPU load falls below 50%. So the
+     * residual is real: for a file shared into two channels, whichever {@code store} lands last
+     * decides what is indexed, and it may be the one carrying the earlier, smaller union. The
+     * document is then indexed with the roles of only the channels merged up to that point --
+     * too few rather than too many, the safe direction, but nothing corrects it until a later
+     * crawl happens to land the other way. Closing it completely would mean serializing all
+     * processing of a URL, content download and extraction included, which is a disproportionate
      * cost for what is already an uncommon case (the same file shared into multiple channels).
      * </p>
      *
