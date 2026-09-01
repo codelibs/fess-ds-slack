@@ -1166,8 +1166,15 @@ public class SlackClient implements Closeable {
                         + "this as a channel-scoped failure.", channelId);
                 return false;
             }
+            // StringUtil.isEmpty, not nextCursor.isEmpty(): getNextCursor() is documented to
+            // return null when there are no more pages, and Jackson leaves the field null for a
+            // "response_metadata":{} body that carries no "next_cursor" key at all -- a shape the
+            // guard above cannot catch, since response_metadata itself is present. Reached on a
+            // real response, not only a malformed one, so this is the last page rather than a
+            // channel-scoped failure. An NPE here would escape past computeChannelRoles'
+            // per-channel handling and fail the whole crawl, exactly as described above.
             final String nextCursor = responseMetadata.getNextCursor();
-            if (nextCursor.isEmpty()) {
+            if (StringUtil.isEmpty(nextCursor)) {
                 break;
             }
             response = conversationsMembers(channelId).cursor(nextCursor).execute();

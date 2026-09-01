@@ -128,6 +128,28 @@ public class SlackClientMembersTest extends UnitDsTestCase {
         assertEquals(1, members.size());
     }
 
+    /**
+     * A {@code "response_metadata":{}} object carrying no {@code next_cursor} at all is the same
+     * "no more pages" signal as an empty cursor string -- {@link
+     * org.codelibs.fess.ds.slack.api.type.ResponseMetadata#getNextCursor} is documented to return
+     * null for it -- and must end the walk rather than NPE. The two guards above cannot catch
+     * this shape: both {@code members} and {@code response_metadata} are present; only the cursor
+     * inside the latter is absent.
+     */
+    @Test
+    public void test_nullNextCursorEndsPagingInsteadOfNpe() {
+        server.enqueue("/api/conversations.members",
+                SlackApiMockServer.json("{\"ok\":true,\"members\":[\"U1\"],\"response_metadata\":{}}"));
+
+        final List<String> members = new ArrayList<>();
+        final boolean succeeded = newClient().getChannelMembers("C1", members::add);
+
+        assertTrue("an absent next_cursor is the last page, not a failure", succeeded);
+        assertEquals(1, members.size());
+        assertEquals("U1", members.get(0));
+        assertEquals("paging must stop rather than re-request with a null cursor", 1, server.getRequestCount("/api/conversations.members"));
+    }
+
     private SlackClient newClient() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("token", "xoxb-test");

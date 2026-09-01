@@ -198,6 +198,39 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
     }
 
     /**
+     * The same missing-{@code next_cursor} shape {@link
+     * SlackClientMembersTest#test_nullNextCursorEndsPagingInsteadOfNpe} pins at the client, seen
+     * from the crawl: {@code computeChannelRoles} runs on {@code storeData}'s own thread, so an
+     * NPE out of {@code getChannelMembers} would bypass the fail-closed path entirely and abort
+     * the whole crawl over one channel's response, rather than skipping that channel. The channel
+     * must instead be indexed by the normal path, with its member's role attached.
+     */
+    @Test
+    public void test_privateChannelWithNoNextCursorIsIndexedNormally() {
+        server.enqueue("/api/users.list", usersListJson(userJson("U1", "alice@example.com")));
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.members",
+                SlackApiMockServer.json("{\"ok\":true,\"members\":[\"U1\"],\"response_metadata\":{}}"));
+        server.enqueue("/api/conversations.history",
+                historyJson(messageJson("Hello", "1111111111.000100", "https://example.slack.com/archives/C1/p1111111111000100")));
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+        paramMap.put("include_private", "true");
+
+        final Map<String, String> scriptMap = new HashMap<>();
+        scriptMap.put("captured_roles", "message.roles");
+
+        final TestIndexUpdateCallback callback = new TestIndexUpdateCallback();
+        dataStore.storeData(new DataConfig(), callback, paramMap, scriptMap, new HashMap<>());
+
+        assertEquals("the channel must be indexed by the normal path, not skipped or aborted", 1, callback.size());
+        assertEquals(List.of(ComponentUtil.getFessConfig().getRoleSearchUserPrefix() + "alice@example.com"),
+                callback.getDataMaps().get(0).get("captured_roles"));
+    }
+
+    /**
      * 5/8/9: the three-source merge -- member roles, {@code default_permissions} (encoded), and
      * the DataConfig permission already carried on {@code defaultDataMap} -- must all be present
      * and deduplicated, and the DataConfig value must survive byte-for-byte: proof that this
