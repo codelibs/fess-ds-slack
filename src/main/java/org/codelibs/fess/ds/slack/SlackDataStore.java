@@ -488,6 +488,21 @@ public class SlackDataStore extends AbstractDataStore {
                         + "permission_sync were disabled. Add role=message.roles to this crawl's scripts to apply them. See this "
                         + "module's README for details.");
             }
+            // A public channel contributes no member roles of its own by design (D2), so with
+            // neither of the two additional sources set, computeChannelRoles returns an empty
+            // list for it. An empty list is not "unrestricted": QueryHelper#buildRoleQuery only
+            // adds should-clauses inside a filter(), so a document carrying no role term matches
+            // no search-time role query at all and is findable by nobody -- administrators
+            // included. Checked once here rather than per channel: the inputs are crawl-wide, so
+            // a per-channel check would say the same thing once per public channel.
+            if (permissionSync && StringUtil.isBlank(paramMap.getAsString(DEFAULT_PERMISSIONS, StringUtil.EMPTY))
+                    && isDataConfigPermissionEmpty(defaultDataMap)) {
+                logger.warn("permission_sync is enabled, but default_permissions is not set and this crawl's DataConfig permission "
+                        + "field is empty: public channels have no roles of their own, so with role=message.roles mapped their "
+                        + "documents are indexed with an empty role list, which matches no search-time role query -- they are "
+                        + "findable by nobody, not even an administrator. Set default_permissions (or this crawl's DataConfig "
+                        + "permission field) to the audience that should be able to see public-channel content.");
+            }
             // Minor (whole-branch review, Phase 3): wrapped in try/finally so the aggregate
             // warning below still reports whatever skippedChannelCount/unresolvedMemberCount
             // accumulated even if a SlackApiException escapes getChannels (e.g. a fatal or
@@ -1044,8 +1059,8 @@ public class SlackDataStore extends AbstractDataStore {
      *
      * <p>
      * A literal emptiness test, deliberately: it answers "would a document computed from this
-     * field alone carry no roles at all". That is not the question the D1 warning in {@code
-     * storeData} turns on -- a field holding only guest permissions is populated, so this returns
+     * field alone carry no roles at all", which is what {@code storeData}'s
+     * documents-findable-by-nobody warning turns on. It is not what the D1 warning turns on -- a field holding only guest permissions is populated, so this returns
      * {@code false} for it, yet it restricts nothing -- so that warning is gated on {@link
      * #isDataConfigPermissionGuestOnly} instead.
      * </p>

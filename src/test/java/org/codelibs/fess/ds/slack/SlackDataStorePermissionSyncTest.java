@@ -398,6 +398,70 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
         }
     }
 
+    /**
+     * A public channel has no member roles of its own (D2), so {@code permission_sync=true} with
+     * neither {@code default_permissions} nor a DataConfig permission computes an empty role list
+     * for it -- and an empty role list is not "unrestricted": {@code QueryHelper#buildRoleQuery}
+     * adds only should-clauses inside a {@code filter()}, so such a document matches no
+     * search-time role query and is findable by nobody. Nothing used to say so.
+     */
+    @Test
+    public void test_warnsWhenPermissionSyncEnabledButNoRolesWillBeApplied() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "general", false)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.history", historyJson());
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+
+        final Map<String, String> scriptMap = new HashMap<>();
+        scriptMap.put("role", "message.roles");
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), paramMap, scriptMap, new HashMap<>());
+
+            assertEquals("exactly one warning per crawl, not one per public channel", 1,
+                    appender.messagesAt(org.apache.logging.log4j.Level.WARN)
+                            .stream()
+                            .filter(m -> m.contains("findable by nobody"))
+                            .count());
+        } finally {
+            appender.detach();
+        }
+    }
+
+    /**
+     * The flip side: {@code default_permissions} gives every public-channel document a role, so
+     * the warning above must not fire. A warning on a correct configuration is worse than one
+     * that misses cases.
+     */
+    @Test
+    public void test_noRolesWarningIsSilentWhenDefaultPermissionsIsSet() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "general", false)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.history", historyJson());
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+        paramMap.put("default_permissions", "{role}guest");
+
+        final Map<String, String> scriptMap = new HashMap<>();
+        scriptMap.put("role", "message.roles");
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), paramMap, scriptMap, new HashMap<>());
+
+            assertFalse("default_permissions is set, so documents do carry a role",
+                    appender.messagesAt(org.apache.logging.log4j.Level.WARN).stream().anyMatch(m -> m.contains("findable by nobody")));
+        } finally {
+            appender.detach();
+        }
+    }
+
     /** 6: fail-closed -- a private channel whose membership could not be fetched is not indexed. */
     @Test
     public void test_failClosedWhenMembersLookupFails() {
