@@ -1516,6 +1516,44 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Reports a per-document failure at warn without putting the document's field <em>values</em>
+     * in the log: the URL and the field names identify the document, and the full map is
+     * available at debug for anyone who turns it on deliberately.
+     *
+     * <p>
+     * The four call sites (both {@code catch} blocks in {@link #processMessage} and {@link
+     * #processFile}) logged the whole {@code dataMap} at warn, which predates {@link
+     * #PERMISSION_SYNC}; what this feature changed is what that map contains. With {@code
+     * permission_sync=true} and {@code role=message.roles}, {@code dataMap} carries the private
+     * channel's member roles -- one per member, each an email address -- by the time either
+     * {@code catch} block runs, so a single failing document dumped that channel's whole
+     * membership roster into the log:
+     * </p>
+     *
+     * <pre>
+     * Crawling Access Exception at : {role=[1alice@example.com, 1bob@example.com], content=Hello}
+     * </pre>
+     *
+     * <p>
+     * That is a wider audience than the data itself has: a Fess administrator holding only {@code
+     * admin-log}/{@code admin-logview} can download crawler logs without any access to this data
+     * store's configuration, let alone to the private channels it crawls. Follows the same
+     * warn-identifies/debug-details split {@code SlackClient#handleApiError} already uses for a
+     * raw response body.
+     * </p>
+     *
+     * @param url the document's URL, already resolved by the caller
+     * @param dataMap the document being indexed when the failure occurred
+     * @param t the failure to report
+     */
+    protected void logDocumentFailure(final String url, final Map<String, Object> dataMap, final Throwable t) {
+        logger.warn("Crawling Access Exception at : {} (fields: {})", url, dataMap.keySet(), t);
+        if (logger.isDebugEnabled()) {
+            logger.debug("dataMap for {}: {}", url, dataMap);
+        }
+    }
+
+    /**
      * Processes a single message for indexing, extracting content and metadata.
      *
      * @param dataConfig the data configuration
@@ -1616,7 +1654,7 @@ public class SlackDataStore extends AbstractDataStore {
             callback.store(paramMap, dataMap);
             crawlerStatsHelper.record(statsKey, StatsAction.FINISHED);
         } catch (final CrawlingAccessException e) {
-            logger.warn("Crawling Access Exception at : {}", dataMap, e);
+            logDocumentFailure(url, dataMap, e);
 
             Throwable target = e;
             if (target instanceof MultipleCrawlingAccessException ex) {
@@ -1651,7 +1689,7 @@ public class SlackDataStore extends AbstractDataStore {
             // change this guards against, so this is defensive on purpose, not dead code to prune.
             throw e;
         } catch (final Throwable t) {
-            logger.warn("Crawling Access Exception at : {}", dataMap, t);
+            logDocumentFailure(url, dataMap, t);
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
             failureUrlService.store(dataConfig, t.getClass().getCanonicalName(), url, t);
             crawlerStatsHelper.record(statsKey, StatsAction.EXCEPTION);
@@ -1768,7 +1806,7 @@ public class SlackDataStore extends AbstractDataStore {
             callback.store(paramMap, dataMap);
             crawlerStatsHelper.record(statsKey, StatsAction.FINISHED);
         } catch (final CrawlingAccessException e) {
-            logger.warn("Crawling Access Exception at : {}", dataMap, e);
+            logDocumentFailure(url, dataMap, e);
 
             Throwable target = e;
             if (target instanceof MultipleCrawlingAccessException ex) {
@@ -1803,7 +1841,7 @@ public class SlackDataStore extends AbstractDataStore {
             // change this guards against, so this is defensive on purpose, not dead code to prune.
             throw e;
         } catch (final Throwable t) {
-            logger.warn("Crawling Access Exception at : {}", dataMap, t);
+            logDocumentFailure(url, dataMap, t);
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
             failureUrlService.store(dataConfig, t.getClass().getCanonicalName(), url, t);
             crawlerStatsHelper.record(statsKey, StatsAction.EXCEPTION);

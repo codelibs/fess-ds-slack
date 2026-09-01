@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.codelibs.fess.app.service.FailureUrlService;
+import org.codelibs.fess.crawler.exception.CrawlingAccessException;
 import org.codelibs.fess.entity.DataStoreParams;
 import org.codelibs.fess.helper.CrawlerStatsHelper;
 import org.codelibs.fess.helper.PermissionHelper;
@@ -814,6 +815,55 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
                     appender.messagesAt(org.apache.logging.log4j.Level.WARN)
                             .stream()
                             .anyMatch(m -> m.contains("permission_sync") && m.contains("include_private")));
+        } finally {
+            appender.detach();
+        }
+    }
+
+    /**
+     * A per-document failure must not put the private channel's membership in the log. With
+     * {@code permission_sync=true} and {@code role=message.roles}, {@code dataMap} carries one
+     * role per member -- each an email address -- by the time {@code processMessage}'s {@code
+     * catch} blocks run, and those blocks used to log the whole map at warn. Crawler logs are
+     * downloadable by an administrator holding only {@code admin-log}/{@code admin-logview}, who
+     * need not have access to this data store's configuration at all.
+     */
+    @Test
+    public void test_perDocumentFailureDoesNotLogMemberEmailsAtWarn() {
+        server.enqueue("/api/users.list", usersListJson(userJson("U1", "alice@example.com")));
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.members", membersJson("U1"));
+        server.enqueue("/api/conversations.history",
+                historyJson(messageJson("Hello", "1111111111.000100", "https://example.slack.com/archives/C1/p1111111111000100")));
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("permission_sync", "true");
+        paramMap.put("include_private", "true");
+
+        final Map<String, String> scriptMap = new HashMap<>();
+        scriptMap.put("role", "message.roles");
+        scriptMap.put("url", "message.permalink");
+
+        final TestIndexUpdateCallback failingCallback = new TestIndexUpdateCallback() {
+            @Override
+            public void store(final DataStoreParams params, final Map<String, Object> dataMap) {
+                throw new CrawlingAccessException("boom");
+            }
+        };
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.storeData(new DataConfig(), failingCallback, paramMap, scriptMap, new HashMap<>());
+
+            final List<String> warnings = appender.messagesAt(org.apache.logging.log4j.Level.WARN);
+            assertTrue("the failure itself must still be reported at warn, with the document's URL",
+                    warnings.stream()
+                            .anyMatch(m -> m.contains("Crawling Access Exception")
+                                    && m.contains("https://example.slack.com/archives/C1/p1111111111000100")));
+            for (final String message : warnings) {
+                assertFalse("a channel member's email must never reach the log at warn: " + message, message.contains("alice@example.com"));
+            }
         } finally {
             appender.detach();
         }
