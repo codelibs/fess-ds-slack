@@ -682,9 +682,11 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
 
     /**
      * Minor (whole-branch review, Phase 3): the D1 warning must not fire when the operator has
-     * already set a DataConfig-level permission -- that crawl is not actually unrestricted, so
-     * warning regardless would be a false alarm on every crawl for an operator who did the right
-     * thing.
+     * already set a DataConfig-level permission that actually restricts something -- that crawl
+     * is not unrestricted, so warning regardless would be a false alarm on every crawl for an
+     * operator who did the right thing. {@code {role}admin} here, deliberately not the admin UI's
+     * pre-filled guest default, which restricts nothing and is covered by {@link
+     * #test_warnsWhenDataConfigPermissionIsOnlyTheAdminUiGuestDefault}.
      */
     @Test
     public void test_noWarningWhenDataConfigPermissionIsSet() {
@@ -705,6 +707,46 @@ public class SlackDataStorePermissionSyncTest extends UnitDsTestCase {
             dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), paramMap, new HashMap<>(), defaultDataMap);
 
             assertFalse("a populated DataConfig permission must not trigger the D1 warning",
+                    appender.messagesAt(org.apache.logging.log4j.Level.WARN)
+                            .stream()
+                            .anyMatch(m -> m.contains("permission_sync") && m.contains("include_private")));
+        } finally {
+            appender.detach();
+        }
+    }
+
+    /**
+     * The case an emptiness check missed entirely: the admin UI pre-fills a new Data Store
+     * config's Permissions field from {@code role.search.default.display.permissions} ({@code
+     * {role}guest} by default) and saves it encoded, and {@code role.search.guest.permissions}
+     * hands that same permission to every anonymous searcher. Such a field is populated but
+     * restricts nothing, so the D1 warning must still fire -- it was being suppressed in exactly
+     * the shipped default configuration it exists to catch.
+     */
+    @Test
+    public void test_warnsWhenDataConfigPermissionIsOnlyTheAdminUiGuestDefault() {
+        server.enqueue("/api/users.list", usersListJson());
+        server.enqueue("/api/conversations.list", channelsListJson(channelJson("C1", "secret", true)));
+        server.enqueue("/api/team.info", teamInfoJson());
+        server.enqueue("/api/conversations.history", historyJson());
+
+        final DataStoreParams paramMap = baseParamMap();
+        paramMap.put("include_private", "true");
+
+        final FessConfig fessConfig = ComponentUtil.getFessConfig();
+        // Exactly what the admin UI leaves in defaultDataMap for an untouched Permissions field:
+        // the pre-filled value, encoded on save.
+        final String preFilledPermission = ComponentUtil.getPermissionHelper().encode(fessConfig.getRoleSearchDefaultDisplayPermissions());
+        assertTrue("precondition: the pre-filled permission is one every anonymous searcher already holds",
+                fessConfig.getSearchGuestRoleList().contains(preFilledPermission));
+        final Map<String, Object> defaultDataMap = new HashMap<>();
+        defaultDataMap.put(fessConfig.getIndexFieldRole(), new ArrayList<>(List.of(preFilledPermission)));
+
+        final TestLogAppender appender = TestLogAppender.attachTo(SlackDataStore.class);
+        try {
+            dataStore.storeData(new DataConfig(), new TestIndexUpdateCallback(), paramMap, new HashMap<>(), defaultDataMap);
+
+            assertTrue("a DataConfig permission holding only guest permissions must still trigger the D1 warning",
                     appender.messagesAt(org.apache.logging.log4j.Level.WARN)
                             .stream()
                             .anyMatch(m -> m.contains("permission_sync") && m.contains("include_private")));

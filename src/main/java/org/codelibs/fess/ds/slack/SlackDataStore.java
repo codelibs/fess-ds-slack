@@ -460,9 +460,13 @@ public class SlackDataStore extends AbstractDataStore {
             // DataConfig-level permissions configured for this crawl, not per-channel
             // membership, which is a de facto publish switch if that permission field happens to
             // be left empty. Minor (whole-branch review, Phase 3): gated on that field actually
-            // being empty -- an operator who *has* set a DataConfig permission is not running
-            // unrestricted, so warning regardless was a false alarm on every one of their crawls.
-            if (!permissionSync && Boolean.TRUE.equals(client.includePrivate) && isDataConfigPermissionEmpty(defaultDataMap)) {
+            // restricting something -- an operator who *has* set a DataConfig permission is not
+            // running unrestricted, so warning regardless was a false alarm on every one of their
+            // crawls. Guest-aware, not merely an emptiness check: the admin UI pre-fills that
+            // field with {role}guest, which every anonymous searcher holds, so an emptiness check
+            // would stay silent in precisely the shipped default configuration this warns about
+            // (see isDataConfigPermissionGuestOnly).
+            if (!permissionSync && Boolean.TRUE.equals(client.includePrivate) && isDataConfigPermissionGuestOnly(defaultDataMap)) {
                 logger.warn("permission_sync is disabled but include_private is enabled: private channel content will be indexed "
                         + "using only the DataConfig-level permissions configured for this crawl, not each channel's own "
                         + "membership. Set permission_sync=true to restrict each private channel's documents to that channel's "
@@ -1039,11 +1043,11 @@ public class SlackDataStore extends AbstractDataStore {
      * whether an operator has left this crawl's DataConfig permission field unset.
      *
      * <p>
-     * Used to gate the D1 warning in {@code storeData} (Minor, whole-branch review Phase 3): that
-     * warning is about content ending up unrestricted, which is only actually the case when this
-     * returns {@code true}. An operator who has set a DataConfig permission is not running
-     * unrestricted, even with {@link #PERMISSION_SYNC} off, so warning regardless of this check
-     * was a false alarm on every one of their crawls.
+     * A literal emptiness test, deliberately: it answers "would a document computed from this
+     * field alone carry no roles at all". That is not the question the D1 warning in {@code
+     * storeData} turns on -- a field holding only guest permissions is populated, so this returns
+     * {@code false} for it, yet it restricts nothing -- so that warning is gated on {@link
+     * #isDataConfigPermissionGuestOnly} instead.
      * </p>
      *
      * @param defaultDataMap the default data map, for the DataConfig-level permission
@@ -1053,6 +1057,43 @@ public class SlackDataStore extends AbstractDataStore {
     protected boolean isDataConfigPermissionEmpty(final Map<String, Object> defaultDataMap) {
         return !(defaultDataMap.get(ComponentUtil.getFessConfig().getIndexFieldRole()) instanceof final List<?> roleTypeList)
                 || roleTypeList.isEmpty();
+    }
+
+    /**
+     * Returns whether this crawl's DataConfig permission field restricts nothing: either it is
+     * empty ({@link #isDataConfigPermissionEmpty}), or every permission in it is one every
+     * anonymous searcher already holds.
+     *
+     * <p>
+     * A literally-empty check is not enough to gate the D1 warning, because the shipped default
+     * is not an empty field. The admin UI pre-fills a new Data Store config's Permissions field
+     * from {@code role.search.default.display.permissions}, whose default value is {@code
+     * {role}guest}, and saves it encoded; {@code role.search.guest.permissions} then hands that
+     * same permission to every anonymous searcher. So an operator who never touched the field
+     * ships private-channel content readable by anyone -- the exact situation the warning exists
+     * to catch -- while an emptiness check reports the field as populated and stays silent.
+     * </p>
+     *
+     * <p>
+     * The guest set is read from {@link
+     * org.codelibs.fess.mylasta.direction.FessProp#getSearchGuestRoleList} rather than compared
+     * against a hard-coded {@code Rguest}: it is exactly what {@code RoleQueryHelper} gives an
+     * anonymous searcher, prefixes and all, so this stays correct in a deployment that has
+     * reconfigured either property. Only consulted when the field is non-empty, so a crawl with
+     * no DataConfig permission at all does not require {@code PermissionHelper} to be resolvable.
+     * </p>
+     *
+     * @param defaultDataMap the default data map, for the DataConfig-level permission
+     * @return {@code true} if the DataConfig permission list is empty, or grants nothing an
+     *         anonymous searcher does not already have
+     */
+    protected boolean isDataConfigPermissionGuestOnly(final Map<String, Object> defaultDataMap) {
+        if (isDataConfigPermissionEmpty(defaultDataMap)) {
+            return true;
+        }
+        final List<?> roleTypeList = (List<?>) defaultDataMap.get(ComponentUtil.getFessConfig().getIndexFieldRole());
+        final List<String> guestRoles = ComponentUtil.getFessConfig().getSearchGuestRoleList();
+        return roleTypeList.stream().allMatch(guestRoles::contains);
     }
 
     /**
