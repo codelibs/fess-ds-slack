@@ -1118,8 +1118,19 @@ public class SlackClient implements Closeable {
                 return;
             }
             final List<Message> messages = response.getMessages();
-            for (int i = 1; i < messages.size(); i++) {
-                final Message message = messages.get(i);
+            for (final Message message : messages) {
+                // The thread's parent message comes back in this list as well as from
+                // conversations.history, and indexing it from both would store it twice.
+                // It is identified by its timestamp rather than by its position, because
+                // its position is only reliable on the first page: Slack's reference for
+                // conversations.replies does not say whether the parent is repeated as
+                // messages[0] of every page, and skipping index 0 unconditionally drops a
+                // real reply on every page after the first if it is not. Matching on the
+                // timestamp is correct either way -- the parent is exactly the message
+                // whose ts equals the thread_ts this walk was started from.
+                if (threadTs != null && threadTs.equals(message.getTs())) {
+                    continue;
+                }
                 // Slack documents thread_broadcast as a message subtype, checked here via
                 // Message#getSubtype() -- not as a boolean field. An earlier revision of this
                 // class relied on a since-deleted Message#isThreadBroadcast() that was always
