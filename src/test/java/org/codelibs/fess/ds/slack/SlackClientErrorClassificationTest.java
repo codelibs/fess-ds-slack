@@ -30,7 +30,9 @@ import org.junit.jupiter.api.TestInfo;
 /**
  * Covers the {@code ok: false} classification that {@code SlackClient.handleApiError}
  * centralizes for the five paginated calls (files.list, conversations.list,
- * conversations.history, conversations.replies, users.list): fatal codes must throw
+ * conversations.history, conversations.replies, users.list) -- see
+ * {@link SlackClientLookupErrorTest} for the four single-object lookups that route through the
+ * same method: fatal codes must throw
  * {@link SlackApiException} so the job fails instead of reporting a false success; everything
  * else must be skipped without aborting the crawl; {@code thread_not_found} must not be logged
  * at warn; and no code -- including one this table does not name -- may be treated as fatal

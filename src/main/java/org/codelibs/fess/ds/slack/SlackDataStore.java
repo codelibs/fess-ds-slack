@@ -110,20 +110,25 @@ import com.google.common.util.concurrent.UncheckedExecutionException;
  * javadoc for why this layer does not decide fatal-vs-skip itself.</li>
  * <li><b>Body classification</b> ({@link SlackClient#handleApiError}): every paginated call
  * (files.list, conversations.list, conversations.history, conversations.replies,
- * conversations.members, users.list) routes its {@code ok:false} body here. A code in
+ * conversations.members, users.list) and every single-object lookup (users.info, bots.info,
+ * conversations.info, chat.getPermalink) routes its {@code ok:false} body here. A code in
  * {@link SlackClient#FATAL_ERROR_CODES} (the token itself cannot authenticate) or
  * {@link SlackClient#TRANSIENT_ERROR_CODES} (a transient server-side condition, not a property
  * of the specific channel/page), or a response with {@code retriesExhausted()} set regardless of
  * its code, throws {@link org.codelibs.fess.ds.slack.api.SlackApiException}. Everything else is
- * warned and skipped for just that channel/page.</li>
+ * warned and skipped for just that channel/page. A lookup's "not found" (e.g. {@code
+ * user_not_found}) stays in that skip bucket on purpose: only then does the caller's fall back to
+ * the raw ID remain the right answer.</li>
  * <li><b>Propagation or worker latching</b>: a {@link org.codelibs.fess.ds.slack.api.SlackApiException}
  * thrown on {@link #storeData}'s own thread (files.list, conversations.list,
  * conversations.history, users.list, the constructor's preload of both listing calls, and
- * conversations.members -- called from {@link #computeChannelRoles}, itself invoked
- * synchronously from the channel-walk callback passed to {@code client.getChannels}, never from
- * a worker thread) propagates directly out of {@link #storeData}. One raised on a worker thread dispatched by
+ * conversations.members and users.info -- called from {@link #computeChannelRoles}/{@link
+ * #getMemberEmail}, themselves invoked synchronously from the channel-walk callback passed to
+ * {@code client.getChannels}, never from a worker thread) propagates directly out of
+ * {@link #storeData}. One raised on a worker thread dispatched by
  * {@link #processChannelMessages}/{@link #processChannelFiles} (conversations.replies via {@link
- * #processMessageReplies}) cannot reach the submitting thread that way -- {@link
+ * #processMessageReplies}, and users.info/bots.info/chat.getPermalink via {@link #processMessage}
+ * and {@link #processFile}) cannot reach the submitting thread that way -- {@link
  * java.util.concurrent.ThreadPoolExecutor} swallows an uncaught exception from its {@code
  * Runnable} -- so it is caught there and handed to {@link #latchFatalError} instead, which
  * records it and stops the crawl (next mechanism) rather than letting it vanish.</li>
@@ -1014,6 +1019,12 @@ public class SlackDataStore extends AbstractDataStore {
      * @return the member's email, or {@code null} if the user could not be looked up or carries
      *         no email (e.g. the token lacks the {@code users:read.email} scope -- see {@link
      *         Profile#getEmail()})
+     * @throws SlackApiException if {@code users.info} failed with a fatal or transient Slack
+     *             error. Returning {@code null} fails the channel closed, which is the right
+     *             answer for a member whose email is genuinely unavailable and the wrong one for
+     *             a revoked token: the operator would see channels being skipped for a reason
+     *             recorded only at debug. The catch below therefore names only the three
+     *             cache-miss types, as {@link #getUsername} does.
      */
     protected String getMemberEmail(final SlackClient client, final String memberId) {
         try {
@@ -1647,8 +1658,21 @@ public class SlackDataStore extends AbstractDataStore {
         String url;
         try {
             url = getMessagePermalink(client, team, channel, message);
+        } catch (final SlackApiException e) {
+            // Not a per-message failure, so it must not be traded for the fallback identifier
+            // below: the worker task dispatching this call forwards it to latchFatalError.
+            throw e;
         } catch (final Exception e) {
             logger.warn("Failed to get a permalink for a message in channel: {}", channel.getId(), e);
+            url = null;
+        }
+        if (url == null) {
+            // Only chat.getPermalink produces a null here, and only for a message-scoped error
+            // (a fatal one threw above). SlackClient#getPermalink already logged the Slack error
+            // code; substituting the same identifier the catch above uses keeps the message
+            // indexed, where passing the null on gave new StatsKeyObject(null) and an
+            // IllegalArgumentException out of CrawlerStatsHelper#begin instead -- recording the
+            // message as a failure under an error that named neither Slack nor the cause.
             url = channel.getId() + "/" + message.getTs();
         }
         final StatsKeyObject statsKey = new StatsKeyObject(url);
@@ -1745,10 +1769,10 @@ public class SlackDataStore extends AbstractDataStore {
             // fails the whole crawl instead of reporting a false success. Catching it here as a
             // plain Throwable would instead record it via FailureUrlService as an ordinary
             // per-item failure and let the crawl continue -- silently restoring the exact defect
-            // this phase closed. Currently unreachable in practice (nothing this method calls
-            // routes through SlackClient#handleApiError yet -- see the six methods deliberately
-            // left out of that table), but the obvious next step for that table is exactly the
-            // change this guards against, so this is defensive on purpose, not dead code to prune.
+            // this phase closed. This is now a live path, not a defensive one: the user, bot and
+            // permalink lookups this method makes -- users.info, bots.info, chat.getPermalink --
+            // all route through handleApiError, so a revoked token surfaces here rather than as a
+            // per-message failure with an error that names neither Slack nor the cause.
             throw e;
         } catch (final Throwable t) {
             logDocumentFailure(url, dataMap, t);
@@ -1897,10 +1921,10 @@ public class SlackDataStore extends AbstractDataStore {
             // fails the whole crawl instead of reporting a false success. Catching it here as a
             // plain Throwable would instead record it via FailureUrlService as an ordinary
             // per-item failure and let the crawl continue -- silently restoring the exact defect
-            // this phase closed. Currently unreachable in practice (nothing this method calls
-            // routes through SlackClient#handleApiError yet -- see the six methods deliberately
-            // left out of that table), but the obvious next step for that table is exactly the
-            // change this guards against, so this is defensive on purpose, not dead code to prune.
+            // this phase closed. This is now a live path, not a defensive one: getFileUsername's
+            // users.info lookup routes through handleApiError, so a revoked token surfaces here
+            // rather than as a per-file failure with an error that names neither Slack nor the
+            // cause.
             throw e;
         } catch (final Throwable t) {
             logDocumentFailure(url, dataMap, t);
@@ -1974,6 +1998,8 @@ public class SlackDataStore extends AbstractDataStore {
      * @param client the Slack client for user lookups
      * @param message the message to extract username from
      * @return the username or empty string if not found
+     * @throws SlackApiException if a user or bot lookup failed with a fatal or transient Slack
+     *             error; see {@link #getUsername} for why this is not absorbed here
      */
     public String getMessageUsername(final SlackClient client, final Message message) {
         try {
@@ -1988,6 +2014,14 @@ public class SlackDataStore extends AbstractDataStore {
                     return getUsername(client, message.getComment().getUser());
                 }
             }
+        } catch (final SlackApiException e) {
+            // Must escape this method's catch-all, which is the widest of the three around a
+            // lookup: it exists so an unknown user or a malformed message leaves the username
+            // empty instead of failing the document, and a fatal Slack error is neither. The
+            // worker task running this (processChannelMessages/processChannelFiles) forwards it
+            // to latchFatalError, which is what makes the job fail rather than finish green with
+            // raw IDs in the author field.
+            throw e;
         } catch (final Exception e) {
             if (logger.isDebugEnabled()) {
                 logger.debug("Failed to get a username from message.", e);
@@ -2002,12 +2036,16 @@ public class SlackDataStore extends AbstractDataStore {
      * @param client the Slack client for user lookups
      * @param file the file to extract username from
      * @return the username or empty string if not found
+     * @throws SlackApiException if the user lookup failed with a fatal or transient Slack error;
+     *             see {@link #getMessageUsername} for why this is not absorbed here
      */
     public String getFileUsername(final SlackClient client, final File file) {
         try {
             if (file.getUser() != null) {
                 return getUsername(client, file.getUser());
             }
+        } catch (final SlackApiException e) {
+            throw e;
         } catch (final Exception e) {
             if (logger.isDebugEnabled()) {
                 logger.debug("Failed to get a username from message.", e);
@@ -2022,6 +2060,13 @@ public class SlackDataStore extends AbstractDataStore {
      * @param client the Slack client for user lookups
      * @param userId the user ID to look up
      * @return the user's display name or the user ID if lookup fails
+     * @throws SlackApiException if {@code users.info} failed with a fatal or transient Slack
+     *             error. Falling back to the raw ID is right for a user who really is unknown and
+     *             wrong for a revoked token: the crawl would keep indexing documents whose author
+     *             is an ID rather than a name and still report success. The catch below therefore
+     *             names only the three cache-miss types, deliberately leaving this one out --
+     *             {@link SlackClient#load} has already unwrapped it out of Guava's
+     *             {@link UncheckedExecutionException} so that exclusion actually takes effect.
      */
     protected String getUsername(final SlackClient client, final String userId) {
         try {
@@ -2070,8 +2115,13 @@ public class SlackDataStore extends AbstractDataStore {
      * @param team the team information
      * @param channel the channel containing the message
      * @param message the message to get permalink for
-     * @return the permalink URL for the message, or an empty string if the message carries no
-     *         timestamp to build one from
+     * @return the permalink URL for the message, an empty string if the message carries no
+     *         timestamp to build one from, or {@code null} if {@code chat.getPermalink} had to be
+     *         called (no {@code team}, i.e. {@code team.info} failed) and itself failed with a
+     *         message-scoped error -- see {@link #processMessage} for the identifier substituted
+     *         in that case
+     * @throws SlackApiException if {@code chat.getPermalink} failed with a fatal or transient
+     *             Slack error
      */
     public String getMessagePermalink(final SlackClient client, final Team team, final Channel channel, final Message message) {
         String permalink = message.getPermalink();

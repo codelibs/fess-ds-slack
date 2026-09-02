@@ -35,10 +35,13 @@ import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Response;
 import org.codelibs.fess.ds.slack.api.SlackApiException;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoResponse;
 import org.codelibs.fess.ds.slack.api.method.chat.ChatGetPermalinkRequest;
+import org.codelibs.fess.ds.slack.api.method.chat.ChatGetPermalinkResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsInfoResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsMembersRequest;
@@ -51,6 +54,7 @@ import org.codelibs.fess.ds.slack.api.method.files.FilesListResponse;
 import org.codelibs.fess.ds.slack.api.method.team.TeamInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.team.TeamInfoResponse;
 import org.codelibs.fess.ds.slack.api.method.users.UsersInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.users.UsersInfoResponse;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListRequest;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
 import org.codelibs.fess.ds.slack.api.type.Bot;
@@ -293,6 +297,16 @@ public class SlackClient implements Closeable {
         requestContext.setTimeouts(getConnectionTimeout(paramMap), getReadTimeout(paramMap));
         requestContext.setRetry(getMaxRetryCount(paramMap), getRetryInterval(paramMap));
 
+        // All three loaders below check ok() and route a failure through handleApiError before
+        // touching the payload accessor. Slack answers most failures with HTTP 200 and
+        // {"ok":false,"error":"..."}, so getUser()/getBot()/getChannel() would otherwise just
+        // return null and a revoked token would be indistinguishable from a genuinely unknown
+        // user: Guava turns that null into an InvalidCacheLoadException, every caller already
+        // absorbs it as a lookup miss, and the crawl finishes green with raw IDs in the author
+        // field. Returning null *after* handleApiError keeps that miss behaviour for the codes
+        // that really do mean "not found" -- handleApiError throws first for a fatal or
+        // transient one -- and logs the Slack error code either way, so a skip has a stated
+        // cause. See getUser/getBot/getChannel for how the thrown error escapes Guava's wrapper.
         usersCache = CacheBuilder.newBuilder()
                 // Each user is cached under both its ID and its name (see the preload
                 // below), so the effective capacity is half the configured size unless
@@ -301,7 +315,12 @@ public class SlackClient implements Closeable {
                 .build(new CacheLoader<String, User>() {
                     @Override
                     public User load(final String key) {
-                        return usersInfo(key).execute().getUser();
+                        final UsersInfoResponse response = usersInfo(key).execute();
+                        if (!response.ok()) {
+                            handleApiError("users.info", response);
+                            return null;
+                        }
+                        return response.getUser();
                     }
                 });
         botsCache = CacheBuilder.newBuilder()
@@ -311,7 +330,12 @@ public class SlackClient implements Closeable {
                 .build(new CacheLoader<String, Bot>() {
                     @Override
                     public Bot load(final String key) {
-                        return botsInfo().bot(key).execute().getBot();
+                        final BotsInfoResponse response = botsInfo().bot(key).execute();
+                        if (!response.ok()) {
+                            handleApiError("bots.info", response);
+                            return null;
+                        }
+                        return response.getBot();
                     }
                 });
         channelsCache = CacheBuilder.newBuilder()
@@ -322,7 +346,12 @@ public class SlackClient implements Closeable {
                 .build(new CacheLoader<String, Channel>() {
                     @Override
                     public Channel load(final String key) {
-                        return conversationsInfo(key).execute().getChannel();
+                        final ConversationsInfoResponse response = conversationsInfo(key).execute();
+                        if (!response.ok()) {
+                            handleApiError("conversations.info", response);
+                            return null;
+                        }
+                        return response.getChannel();
                     }
                 });
         // Initialize caches to avoid exceeding the rate limit of the Slack API
@@ -680,10 +709,14 @@ public class SlackClient implements Closeable {
 
     /**
      * Classifies a failed ({@code ok: false}) Slack API response and reacts accordingly. Used by
-     * every one of this class's paginated calls (files.list, conversations.list,
-     * conversations.history, conversations.replies, conversations.members, users.list) so the
-     * "what does this error code mean" decision lives in one place instead of six copies of the
-     * same switch.
+     * every Slack call this class makes except {@code team.info} -- the six paginated ones
+     * (files.list, conversations.list, conversations.history, conversations.replies,
+     * conversations.members, users.list) and the four single-object lookups (users.info,
+     * bots.info and conversations.info in the cache loaders, plus chat.getPermalink) -- so the
+     * "what does this error code mean" decision lives in one place instead of ten copies of the
+     * same switch. {@link #getTeam} is the sole, documented exception; see its javadoc.
+     * {@link #filesInfo} is not on the list because nothing in this module executes it -- it is a
+     * request builder with no caller -- so whoever adds the first one owns routing it here too.
      *
      * <p>
      * Four outcomes, in order:
@@ -782,9 +815,10 @@ public class SlackClient implements Closeable {
      * @param botName the bot name or ID
      * @return the bot information
      * @throws ExecutionException if the bot information cannot be retrieved
+     * @throws SlackApiException if {@code bots.info} failed with a fatal or transient error
      */
     public Bot getBot(final String botName) throws ExecutionException {
-        return botsCache.get(botName);
+        return load(botsCache, botName);
     }
 
     /**
@@ -793,9 +827,10 @@ public class SlackClient implements Closeable {
      * @param userName the username or user ID
      * @return the user information
      * @throws ExecutionException if the user information cannot be retrieved
+     * @throws SlackApiException if {@code users.info} failed with a fatal or transient error
      */
     public User getUser(final String userName) throws ExecutionException {
-        return usersCache.get(userName);
+        return load(usersCache, userName);
     }
 
     /**
@@ -804,20 +839,73 @@ public class SlackClient implements Closeable {
      * @param channelName the channel name or ID
      * @return the channel information
      * @throws ExecutionException if the channel information cannot be retrieved
+     * @throws SlackApiException if {@code conversations.info} failed with a fatal or transient
+     *             error
      */
     public Channel getChannel(final String channelName) throws ExecutionException {
-        return channelsCache.get(channelName);
+        return load(channelsCache, channelName);
+    }
+
+    /**
+     * Reads {@code key} from {@code cache}, unwrapping a {@link SlackApiException} raised by the
+     * loader so it reaches the caller as itself.
+     *
+     * <p>
+     * Guava wraps any unchecked exception a {@link CacheLoader} throws in an
+     * {@link UncheckedExecutionException}, and every caller of the three lookups already catches
+     * that type -- along with {@link ExecutionException} and {@link InvalidCacheLoadException} --
+     * to keep one unknown user or one bad channel name from aborting a crawl. A fatal Slack error
+     * arriving in that same wrapper would be swallowed by exactly those catches, which is the
+     * defect this whole change closes, so it is unwrapped here rather than at each of the five
+     * call sites (one in this class, four in {@code SlackDataStore}) that would otherwise each
+     * have to remember to look inside.
+     * </p>
+     *
+     * @param <T> the cached value type
+     * @param cache the cache to read from
+     * @param key the cache key
+     * @return the cached or freshly loaded value
+     * @throws ExecutionException if the loader threw a checked exception
+     * @throws SlackApiException if the loader failed with a fatal or transient Slack error
+     */
+    protected <T> T load(final LoadingCache<String, T> cache, final String key) throws ExecutionException {
+        try {
+            return cache.get(key);
+        } catch (final UncheckedExecutionException e) {
+            if (e.getCause() instanceof final SlackApiException fatal) {
+                throw fatal;
+            }
+            throw e;
+        }
     }
 
     /**
      * Retrieves the permalink URL for a specific message.
      *
+     * <p>
+     * A message-scoped failure -- {@code message_not_found}, for instance -- returns {@code null}
+     * and leaves the caller to substitute an identifier of its own; a fatal or transient error
+     * fails the crawl through {@link #handleApiError}. Before that check the two were the same
+     * {@code null}, and the caller in {@code SlackDataStore#getMessagePermalink} passed it into
+     * {@code new StatsKeyObject(null)}, so the message was recorded as a failure carrying an
+     * {@code IllegalArgumentException} out of {@code CrawlerStatsHelper} that said nothing about
+     * Slack.
+     * </p>
+     *
      * @param channelId the channel ID
      * @param threadTs the message timestamp
-     * @return the permalink URL for the message
+     * @return the permalink URL for the message, or {@code null} if the call failed with a
+     *         message-scoped error
+     * @throws SlackApiException if {@code chat.getPermalink} failed with a fatal or transient
+     *             error
      */
     public String getPermalink(final String channelId, final String threadTs) {
-        return chatGetPermalink(channelId, threadTs).execute().getPermalink();
+        final ChatGetPermalinkResponse response = chatGetPermalink(channelId, threadTs).execute();
+        if (!response.ok()) {
+            handleApiError("chat.getPermalink", response);
+            return null;
+        }
+        return response.getPermalink();
     }
 
     /**
