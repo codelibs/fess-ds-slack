@@ -45,7 +45,7 @@ public class UsersListRequest extends Request<UsersListResponse> {
 
     @Override
     public UsersListResponse execute() {
-        return parseResponse(request().execute().getContentAsString(), UsersListResponse.class);
+        return execute(request(), UsersListResponse.class);
     }
 
     /**

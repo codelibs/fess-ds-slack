@@ -19,8 +19,11 @@ import java.io.IOException;
 import java.net.Proxy;
 import java.util.function.Function;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlRequest;
+import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.ds.slack.SlackDataStoreException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,6 +36,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * @param <T> the response type that this request will return
  */
 public abstract class Request<T extends Response> {
+
+    private static final Logger logger = LogManager.getLogger(Request.class);
 
     /** Function for creating GET HTTP requests */
     public static final Function<String, CurlRequest> GET = Curl::get;
@@ -107,6 +112,14 @@ public abstract class Request<T extends Response> {
     /**
      * Parses the raw JSON response content into the specified response type.
      *
+     * <p>
+     * The response body is not included in the exception message: an invalid
+     * token can make Slack answer with an HTML error page, and any response
+     * body may carry PII, so embedding it verbatim would let it reach the
+     * log at whatever level the caller logs the exception. The body is
+     * logged separately, at debug level only.
+     * </p>
+     *
      * @param content the raw JSON response content from the API
      * @param valueType the class type to parse the response into
      * @return the parsed response object
@@ -116,7 +129,35 @@ public abstract class Request<T extends Response> {
         try {
             return mapper.readValue(content, valueType).responseBody(content);
         } catch (final IOException e) {
-            throw new SlackDataStoreException("Failed to parse: \"" + content + "\"", e);
+            if (logger.isDebugEnabled()) {
+                logger.debug("Unparseable Slack API response: {}", content);
+            }
+            throw new SlackDataStoreException(
+                    "Failed to parse a Slack API response of " + (content == null ? 0 : content.length()) + " characters.", e);
+        }
+    }
+
+    /**
+     * Executes the given request, parses the JSON body into this request's
+     * response type and always releases the underlying connection.
+     *
+     * <p>
+     * This is the single place a subclass calls to run its prepared request,
+     * so it is also the single place a future retry layer needs to change to
+     * read {@link CurlResponse#getHttpStatusCode()} or a
+     * {@code Retry-After} header before the response is parsed and closed.
+     * </p>
+     *
+     * @param request the prepared request
+     * @param valueType the response class
+     * @return the parsed response
+     * @throws SlackDataStoreException if closing the response fails
+     */
+    protected T execute(final CurlRequest request, final Class<T> valueType) {
+        try (final CurlResponse response = request.execute()) {
+            return parseResponse(response.getContentAsString(), valueType);
+        } catch (final IOException e) {
+            throw new SlackDataStoreException("Failed to close the response.", e);
         }
     }
 

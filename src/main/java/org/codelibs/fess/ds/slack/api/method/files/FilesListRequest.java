@@ -62,7 +62,7 @@ public class FilesListRequest extends Request<FilesListResponse> {
      */
     @Override
     public FilesListResponse execute() {
-        return parseResponse(request().execute().getContentAsString(), FilesListResponse.class);
+        return execute(request(), FilesListResponse.class);
     }
 
     /**

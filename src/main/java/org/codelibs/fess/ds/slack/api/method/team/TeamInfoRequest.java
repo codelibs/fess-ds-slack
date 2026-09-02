@@ -35,7 +35,7 @@ public class TeamInfoRequest extends Request<TeamInfoResponse> {
 
     @Override
     public TeamInfoResponse execute() {
-        return parseResponse(request().execute().getContentAsString(), TeamInfoResponse.class);
+        return execute(request(), TeamInfoResponse.class);
     }
 
     private CurlRequest request() {

@@ -39,6 +39,20 @@ public class SlackDataStorePermalinkTest extends UnitDsTestCase {
         assertEquals("", permalink);
     }
 
+    /**
+     * The {@code ts == null} guard lives inside the "no permalink yet" branch
+     * specifically so a message that already carries a permalink keeps it
+     * even when {@code ts} is absent; only the both-absent case was covered
+     * before this test.
+     */
+    @Test
+    public void test_messageWithPermalinkButNoTsKeepsPermalink() {
+        final Message message =
+                firstMessage("{\"ok\":true,\"messages\":[{\"text\":\"TEXT\",\"permalink\":\"https://example.slack.com/archives/C1/p1\"}]}");
+        final String permalink = dataStore.getMessagePermalink(null, null, null, message);
+        assertEquals("https://example.slack.com/archives/C1/p1", permalink);
+    }
+
     private Message firstMessage(final String content) {
         return new ConversationsHistoryRequest(null, null).parseResponse(content, ConversationsHistoryResponse.class).getMessages().get(0);
     }

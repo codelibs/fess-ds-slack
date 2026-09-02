@@ -58,7 +58,7 @@ public class FilesInfoRequest extends Request<FilesInfoResponse> {
      */
     @Override
     public FilesInfoResponse execute() {
-        return parseResponse(request().execute().getContentAsString(), FilesInfoResponse.class);
+        return execute(request(), FilesInfoResponse.class);
     }
 
     /**
