@@ -28,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 
 import org.codelibs.fess.ds.slack.api.Request;
 import org.codelibs.fess.entity.DataStoreParams;
@@ -242,6 +243,32 @@ public class SlackApiMockServer implements AutoCloseable {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("token", token);
         return newClient(paramMap);
+    }
+
+    /**
+     * Constructs a {@link SlackClient} against this server with an explicit {@code
+     * aliveSupplier}, for tests that exercise a crawl being stopped mid-walk.
+     *
+     * @param paramMap the configuration parameters, e.g. {@code token}
+     * @param aliveSupplier supplies whether the crawl should keep paging
+     * @return a client constructed against this server's endpoint
+     */
+    public SlackClient newClient(final DataStoreParams paramMap, final BooleanSupplier aliveSupplier) {
+        return new SlackClient(paramMap, aliveSupplier);
+    }
+
+    /**
+     * Convenience overload of {@link #newClient(DataStoreParams, BooleanSupplier)} for the
+     * common case of only needing to set the OAuth token.
+     *
+     * @param token the OAuth access token
+     * @param aliveSupplier supplies whether the crawl should keep paging
+     * @return a client constructed against this server's endpoint
+     */
+    public SlackClient newClient(final String token, final BooleanSupplier aliveSupplier) {
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", token);
+        return newClient(paramMap, aliveSupplier);
     }
 
     /**

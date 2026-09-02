@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 import org.apache.logging.log4j.LogManager;
@@ -86,6 +87,8 @@ public class SlackClient implements Closeable {
     protected static final String TOKEN_PARAM = "token";
     /** Parameter name for including private channels. */
     protected static final String INCLUDE_PRIVATE_PARAM = "include_private";
+    /** Parameter name for excluding archived channels from {@code conversations.list}. */
+    protected static final String EXCLUDE_ARCHIVED_PARAM = "exclude_archived";
     /** Parameter name for specifying channels to crawl. */
     protected static final String CHANNELS_PARAM = "channels";
     /** Special value to indicate all channels should be crawled. */
@@ -168,6 +171,8 @@ public class SlackClient implements Closeable {
 
     /** Whether to include private channels in operations. */
     protected final Boolean includePrivate;
+    /** Whether {@code conversations.list} should exclude archived channels. */
+    protected final Boolean excludeArchived;
     /** Request context for Slack API access. */
     protected final RequestContext requestContext;
     /** Configuration parameters for the data store. */
@@ -180,15 +185,45 @@ public class SlackClient implements Closeable {
     protected LoadingCache<String, Channel> channelsCache;
     /** Channels captured during the constructor preload, in listing order. */
     protected final List<Channel> preloadedChannels = new ArrayList<>();
+    /**
+     * Reports whether the crawl should keep paging. Consulted at each iteration of every
+     * paging loop in this class -- the constructor's {@code users.list}/{@code
+     * conversations.list} preload included -- so an operator stopping the crawl from the admin
+     * UI (which flips {@link org.codelibs.fess.ds.AbstractDataStore#alive} to {@code false})
+     * takes effect at the next page boundary instead of only after every page of every channel
+     * has been walked.
+     */
+    protected final BooleanSupplier aliveSupplier;
 
     /**
      * Creates a new Slack client with the specified configuration parameters.
      * Initializes the request context, proxy settings, and caches for improved performance.
      *
+     * <p>
+     * Equivalent to {@link #SlackClient(DataStoreParams, BooleanSupplier)} with a supplier that
+     * always returns {@code true}, so this client's paging never stops early. Kept as a separate
+     * overload because the test suite constructs {@link SlackClient} directly far more often than
+     * it needs to test stopping.
+     * </p>
+     *
      * @param paramMap the configuration parameters including token, proxy settings, and cache sizes
      * @throws SlackDataStoreException if required parameters are missing or invalid
      */
     public SlackClient(final DataStoreParams paramMap) {
+        this(paramMap, () -> true);
+    }
+
+    /**
+     * Creates a new Slack client with the specified configuration parameters and an explicit
+     * {@code aliveSupplier}. Initializes the request context, proxy settings, and caches for
+     * improved performance.
+     *
+     * @param paramMap the configuration parameters including token, proxy settings, and cache sizes
+     * @param aliveSupplier reports whether the crawl should keep paging; see {@link #aliveSupplier}
+     * @throws SlackDataStoreException if required parameters are missing or invalid
+     */
+    public SlackClient(final DataStoreParams paramMap, final BooleanSupplier aliveSupplier) {
+        this.aliveSupplier = aliveSupplier;
         final String token = getToken(paramMap);
 
         if (token.isEmpty()) {
@@ -197,6 +232,7 @@ public class SlackClient implements Closeable {
 
         this.paramMap = paramMap;
         includePrivate = isIncludePrivate(paramMap);
+        excludeArchived = isExcludeArchived(paramMap);
 
         requestContext = new RequestContext(token);
 
@@ -393,6 +429,21 @@ public class SlackClient implements Closeable {
      */
     protected Boolean isIncludePrivate(final DataStoreParams paramMap) {
         return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(INCLUDE_PRIVATE_PARAM, Constants.FALSE));
+    }
+
+    /**
+     * Determines whether {@code conversations.list} should exclude archived channels.
+     *
+     * <p>
+     * Defaults to {@code false} -- Slack's own default -- so an unset parameter leaves current
+     * behaviour (archived channels included) unchanged.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return true if archived channels should be excluded, false otherwise
+     */
+    protected Boolean isExcludeArchived(final DataStoreParams paramMap) {
+        return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(EXCLUDE_ARCHIVED_PARAM, Constants.FALSE));
     }
 
     /**
@@ -769,6 +820,9 @@ public class SlackClient implements Closeable {
                 return;
             }
             response.getFiles().forEach(consumer);
+            if (!aliveSupplier.getAsBoolean()) {
+                return;
+            }
             final FilesListResponse.Paging paging = response.getPaging();
             if (paging == null || paging.getPages() == null) {
                 // Without paging info there is no way to know whether more pages remain, so
@@ -814,18 +868,21 @@ public class SlackClient implements Closeable {
      * @param consumer the function to process each channel
      */
     public void getAllChannels(final Integer limit, final Consumer<Channel> consumer) {
-        ConversationsListResponse response = conversationsList().types(getTypes()).limit(limit).execute();
+        ConversationsListResponse response = conversationsList().types(getTypes()).excludeArchived(excludeArchived).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
                 handleApiError("conversations.list", response);
                 return;
             }
             response.getChannels().forEach(consumer);
+            if (!aliveSupplier.getAsBoolean()) {
+                return;
+            }
             final String nextCursor = response.getResponseMetadata().getNextCursor();
             if (nextCursor.isEmpty()) {
                 break;
             }
-            response = conversationsList().types(getTypes()).limit(limit).cursor(nextCursor).execute();
+            response = conversationsList().types(getTypes()).excludeArchived(excludeArchived).limit(limit).cursor(nextCursor).execute();
         }
     }
 
@@ -856,6 +913,9 @@ public class SlackClient implements Closeable {
             response.getMessages().forEach(consumer);
             if (!response.hasMore()) {
                 break;
+            }
+            if (!aliveSupplier.getAsBoolean()) {
+                return;
             }
             response = conversationsHistory(channelId).limit(limit).cursor(response.getResponseMetadata().getNextCursor()).execute();
         }
@@ -907,6 +967,9 @@ public class SlackClient implements Closeable {
             if (!response.hasMore()) {
                 break;
             }
+            if (!aliveSupplier.getAsBoolean()) {
+                return;
+            }
             response =
                     conversationsReplies(channelId, threadTs).limit(limit).cursor(response.getResponseMetadata().getNextCursor()).execute();
         }
@@ -935,6 +998,9 @@ public class SlackClient implements Closeable {
                 return;
             }
             response.getMembers().forEach(consumer);
+            if (!aliveSupplier.getAsBoolean()) {
+                return;
+            }
             final String nextCursor = response.getResponseMetadata().getNextCursor();
             if (nextCursor.isEmpty()) {
                 break;

@@ -139,6 +139,45 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String EXECUTOR_TIMEOUT = "executor_timeout";
     /** Default number of seconds {@link #storeData} waits for queued crawl work to finish before forcing shutdown. */
     protected static final int DEFAULT_EXECUTOR_TIMEOUT = 60;
+    /** Parameter name for excluding Slack-generated channel-administration messages. */
+    protected static final String IGNORE_SYSTEM_EVENTS = "ignore_system_events";
+    /**
+     * Parameter name for the delay, in milliseconds, to sleep after each processed message/file.
+     * Read by the inherited {@link AbstractDataStore#getReadInterval}, not by a method in this
+     * class: that method's own key, {@code "readInterval"}, and this one are the same key to
+     * {@link org.codelibs.fess.entity.ParamMap} -- its lookup falls back to the other case
+     * convention on a miss -- so no override is needed here.
+     */
+    protected static final String READ_INTERVAL = "read_interval";
+
+    /**
+     * Message {@code subtype} values that are Slack-generated channel-administration
+     * notifications rather than content a person wrote, dropped by default (see
+     * {@link #isIgnoreSystemEvents}).
+     *
+     * <p>
+     * Deliberately narrower than every subtype Slack documents at reference/events/message:
+     * </p>
+     * <ul>
+     * <li>{@code file_share} and {@code reply_broadcast} are excluded from this set on purpose --
+     * Slack documents both as "no longer served", so a message can never carry them.</li>
+     * <li>{@code thread_broadcast} is excluded from this set on purpose -- it is a real message
+     * a person wrote, broadcast to the channel in addition to its thread, not a system
+     * notification. {@code SlackClient#getMessageReplies} already skips it for an unrelated
+     * reason (avoiding double-indexing a reply reachable both from conversations.history and
+     * conversations.replies); it must still be indexed once, not zero times.</li>
+     * <li>{@code bot_message} and {@code me_message} are excluded from this set on purpose --
+     * both carry content a person (or an integration acting on a channel's behalf) chose to
+     * post, not a Slack-generated notification.</li>
+     * <li>{@code message_changed}/{@code message_deleted}/{@code message_replied} are excluded
+     * from this set because they are moot: Slack documents all three as {@code hidden: true} and
+     * says they "will not return in calls to conversations.history", so this class never sees
+     * them regardless.</li>
+     * </ul>
+     */
+    protected static final Set<String> SYSTEM_EVENT_SUBTYPES = Set.of("channel_join", "channel_leave", "channel_topic", "channel_purpose",
+            "channel_name", "channel_archive", "channel_unarchive", "group_join", "group_leave", "group_topic", "group_purpose",
+            "group_name", "group_archive", "group_unarchive", "pinned_item", "unpinned_item");
 
     /**
      * Parameter keys withheld from crawl scripts: credentials and proxy configuration.
@@ -199,6 +238,8 @@ public class SlackDataStore extends AbstractDataStore {
         configMap.put(IGNORE_ERROR, isIgnoreError(paramMap));
         configMap.put(SUPPORTED_MIMETYPES, getSupportedMimeTypes(paramMap));
         configMap.put(FILE_CRAWL, isFileCrawl(paramMap));
+        configMap.put(IGNORE_SYSTEM_EVENTS, isIgnoreSystemEvents(paramMap));
+        configMap.put(READ_INTERVAL, getReadInterval(paramMap));
         configMap.put(URL_FILTER, getUrlFilter(paramMap));
         if (logger.isDebugEnabled()) {
             logger.debug("configMap: {}", configMap);
@@ -225,13 +266,20 @@ public class SlackDataStore extends AbstractDataStore {
         // via executorService) while this method's own channel walk reads it.
         final AtomicBoolean crawlAlive = new AtomicBoolean(true);
         configMap.put(CRAWL_ALIVE, crawlAlive);
-        try (final SlackClient client = new SlackClient(paramMap)) {
+        // A supplier over both flags rather than a one-time snapshot, so a stop that lands after
+        // this client is constructed is still seen by every paging loop SlackClient runs
+        // afterward. The two are different stops and both must be honoured: `alive` is the
+        // operator's admin-UI stop button (set by DataIndexHelper on the shared singleton, and
+        // never reset), crawlAlive is this crawl's own abort.
+        try (final SlackClient client = new SlackClient(paramMap, () -> alive && crawlAlive.get())) {
             final Team team = client.getTeam();
             final boolean fileCrawl = (Boolean) configMap.get(FILE_CRAWL);
             client.getChannels(channel -> {
-                // Checked before dispatching the next channel, so an abort skips channels that
-                // have not been started yet rather than only cutting short the one in progress.
-                if (!crawlAlive.get()) {
+                // Checked here, not only inside SlackClient's paging loops: this is the loop that
+                // decides whether to dispatch the *next* channel at all, so stopping here skips
+                // channels that have not been started yet instead of only cutting short the one
+                // already in progress.
+                if (!alive || !crawlAlive.get()) {
                     return;
                 }
                 processChannelMessages(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, executorService, client, team,
@@ -269,6 +317,15 @@ public class SlackDataStore extends AbstractDataStore {
             throw new InterruptedRuntimeException(e);
         } finally {
             executorService.shutdownNow();
+        }
+
+        // Checked after the executor has been shut down and awaited above, so this reports the
+        // final state of the crawl rather than a state that could still change. Skipped when a
+        // fatal error was also latched: that is thrown below and is the more actionable of the
+        // two for an operator to see.
+        if (!alive && fatalError.get() == null) {
+            logger.info("Slack crawl for \"{}\" was stopped before completing; the index may contain fewer documents than a full crawl.",
+                    dataConfig.getName());
         }
 
         // Re-thrown after the executor has been shut down and awaited above. On the normal path
@@ -352,6 +409,37 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Determines whether Slack-generated channel-administration messages (see
+     * {@link #SYSTEM_EVENT_SUBTYPES}) should be excluded from indexing.
+     *
+     * <p>
+     * Defaults to {@code true}, unlike every other parameter this PR adds: {@code channel_join}/
+     * {@code channel_leave} and the rest of {@link #SYSTEM_EVENT_SUBTYPES} are search noise, not
+     * content an operator is likely to want indexed, and four of the connectors surveyed for this
+     * plugin's design exclude them by default too. A crawl run without setting this parameter
+     * explicitly indexes fewer documents than it did before this parameter existed.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return true if system-event messages should be excluded, false otherwise
+     */
+    protected boolean isIgnoreSystemEvents(final DataStoreParams paramMap) {
+        return Constants.TRUE.equalsIgnoreCase(paramMap.getAsString(IGNORE_SYSTEM_EVENTS, Constants.TRUE));
+    }
+
+    /**
+     * Returns whether the given message is a Slack-generated channel-administration
+     * notification that {@link #isIgnoreSystemEvents} would exclude.
+     *
+     * @param message the message to test
+     * @return true if the message's subtype is one of {@link #SYSTEM_EVENT_SUBTYPES}
+     */
+    protected boolean isSystemEventMessage(final Message message) {
+        final String subtype = message.getSubtype();
+        return subtype != null && SYSTEM_EVENT_SUBTYPES.contains(subtype);
+    }
+
+    /**
      * Creates and configures a URL filter based on include/exclude patterns.
      *
      * @param paramMap the configuration parameters
@@ -398,6 +486,23 @@ public class SlackDataStore extends AbstractDataStore {
     /**
      * Processes all messages in a channel, including threaded replies.
      *
+     * <p>
+     * A message {@link #isSystemEventMessage} recognizes is dropped here, before it is even
+     * dispatched to {@code executorService}, when {@link #isIgnoreSystemEvents} is on. Dropping
+     * it here also skips the {@link #isThreadParent} check below, so any replies it has are
+     * never fetched either -- see the assumption recorded at the drop site about why that is
+     * believed safe for all of {@link #SYSTEM_EVENT_SUBTYPES}, not just the two the design spec
+     * documents. Skipping a system-event message here also avoids a wasted {@code
+     * chat.getPermalink} call that {@link #processMessage} would otherwise make to resolve its
+     * URL. A dropped message does not count toward {@code read_interval} pacing below, since
+     * nothing was dispatched for it.
+     * </p>
+     *
+     * <p>
+     * Sleeps for {@code read_interval} milliseconds (see {@link #getReadInterval}) after each
+     * message actually dispatched, to pace the crawl against a rate-limited workspace.
+     * </p>
+     *
      * @param dataConfig the data configuration
      * @param callback the index update callback
      * @param configMap the configuration map
@@ -415,7 +520,25 @@ public class SlackDataStore extends AbstractDataStore {
             final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
             final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client, final Team team,
             final Channel channel, final AtomicReference<SlackApiException> fatalError) {
+        final boolean ignoreSystemEvents = (Boolean) configMap.get(IGNORE_SYSTEM_EVENTS);
+        final long readInterval = (Long) configMap.get(READ_INTERVAL);
         client.getChannelMessages(channel.getId(), message -> {
+            if (ignoreSystemEvents && isSystemEventMessage(message)) {
+                // Dropping here also means isThreadParent(message)/processMessageReplies never
+                // run for this message, so any replies it has would be silently lost if it had
+                // any. Design spec F11 documents this as safe for channel_join/channel_leave
+                // specifically -- conversations.replies on their ts returns thread_not_found,
+                // i.e. Slack itself refuses to thread them -- but does not say so for the other
+                // fourteen subtypes in SYSTEM_EVENT_SUBTYPES (channel_topic, pinned_item, ...).
+                // Extending that guarantee to all of them is an assumption, not a verified fact:
+                // they are Slack-generated channel-administration notices, so a reply thread on
+                // one is not a scenario Slack's own UI offers, but this has not been confirmed
+                // against a live workspace.
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Skipping system event message (subtype={}) in channel {}", message.getSubtype(), channel.getId());
+                }
+                return;
+            }
             safeExecute(executorService, () -> {
                 try {
                     processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
@@ -427,6 +550,9 @@ public class SlackDataStore extends AbstractDataStore {
                     latchFatalError(executorService, fatalError, e);
                 }
             });
+            if (readInterval > 0) {
+                sleep(readInterval);
+            }
         });
     }
 
@@ -451,12 +577,13 @@ public class SlackDataStore extends AbstractDataStore {
      * Chosen over letting the backlog drain naturally: once the token itself is no longer valid,
      * every other queued or future {@code conversations.replies} call is going to fail the exact
      * same way, so continuing to run them only delays reporting a failure the crawl already knows
-     * about. {@link #safeExecute} is what keeps this safe for the caller -- {@code
-     * client.getChannels}/{@code getChannelMessages}/{@code getChannelFiles} keep walking and
-     * dispatching on the calling thread after this runs, and a plain {@code execute} call on an
-     * already-shut-down executor throws {@link RejectedExecutionException}, which would otherwise
-     * surface as the crawl's reported failure instead of the {@link SlackApiException} latched
-     * here.
+     * about. What keeps this safe for the caller -- {@code client.getChannels}/{@code
+     * getChannelMessages}/{@code getChannelFiles} keep walking and dispatching on the calling
+     * thread after this runs -- is this executor's {@link ThreadPoolExecutor.CallerRunsPolicy}
+     * (see {@link #newFixedThreadPool}): once shut down, that policy silently drops a submitted
+     * task instead of running or rejecting it, so nothing thrown here could ever mask the
+     * {@link SlackApiException} latched. See {@link #safeExecute} for why its own catch of
+     * {@link RejectedExecutionException} is not what provides that safety.
      * </p>
      *
      * @param executorService the executor to shut down
@@ -473,11 +600,22 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
-     * Submits {@code task} to {@code executorService}, discarding it silently if the executor has
-     * already been shut down (see {@link #latchFatalError}) instead of letting
-     * {@link RejectedExecutionException} propagate to the caller -- typically
-     * {@link SlackClient}'s paging loop, one channel/message/file at a time, which is not
-     * prepared to handle it and would otherwise mask the crawl's real, already-latched failure.
+     * Submits {@code task} to {@code executorService}, catching {@link RejectedExecutionException}
+     * as defence against a future change to this class's rejection policy, not behaviour this
+     * executor actually exhibits today.
+     *
+     * <p>
+     * {@link #newFixedThreadPool} builds this executor with {@link ThreadPoolExecutor.CallerRunsPolicy}.
+     * Once the executor is shut down (see {@link #latchFatalError}), that policy's {@code
+     * rejectedExecution} silently drops the task instead of running or throwing -- verified
+     * empirically against this class's own executor, not merely assumed from the policy's name --
+     * so in this class the catch below has no observable effect: a submission after shutdown is
+     * discarded by the policy before {@link ExecutorService#execute} could ever throw. It is kept
+     * as a guard for if that construction ever changes to a throwing policy (e.g. {@code
+     * AbortPolicy}), in which case a rejected submission -- typically from {@link SlackClient}'s
+     * paging loop, one channel/message/file at a time, which is not prepared to handle it -- would
+     * otherwise mask the crawl's real, already-latched failure.
+     * </p>
      *
      * @param executorService the executor to submit to
      * @param task the task to run
@@ -494,6 +632,11 @@ public class SlackDataStore extends AbstractDataStore {
 
     /**
      * Processes all files in a channel for indexing.
+     *
+     * <p>
+     * Sleeps for {@code read_interval} milliseconds (see {@link #getReadInterval}) after each
+     * file, to pace the crawl against a rate-limited workspace.
+     * </p>
      *
      * @param dataConfig the data configuration
      * @param callback the index update callback
@@ -512,6 +655,7 @@ public class SlackDataStore extends AbstractDataStore {
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel,
             final AtomicReference<SlackApiException> fatalError) {
+        final long readInterval = (Long) configMap.get(READ_INTERVAL);
         client.getChannelFiles(channel.getId(), file -> {
             safeExecute(executorService, () -> {
                 try {
@@ -520,6 +664,9 @@ public class SlackDataStore extends AbstractDataStore {
                     latchFatalError(executorService, fatalError, e);
                 }
             });
+            if (readInterval > 0) {
+                sleep(readInterval);
+            }
         });
     }
 
