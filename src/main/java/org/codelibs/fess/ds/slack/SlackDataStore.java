@@ -470,8 +470,9 @@ public class SlackDataStore extends AbstractDataStore {
         // both a private and a public channel stays visible to (at least) the private channel's
         // members regardless of which channel conversations.list happens to walk last -- not
         // controllable by an operator. A union of allowed principals is less restrictive, not
-        // more; see mergeFileRoles for what that does and does not buy.
-        final Map<String, List<String>> fileRolesByUrl = new ConcurrentHashMap<>();
+        // more; see FileRoles for what that does and does not buy, and for why the merge and
+        // the callback.store it feeds share one monitor per URL.
+        final Map<String, FileRoles> fileRolesByUrl = new ConcurrentHashMap<>();
         // A supplier over both flags rather than a one-time snapshot, so a stop that lands after
         // this client is constructed is still seen by every paging loop SlackClient runs
         // afterward. The two are different stops and both must be honoured: `alive` is the
@@ -1146,17 +1147,17 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
-     * Unions {@code channelRoles} into the roles already accumulated for {@code url} by an
-     * earlier channel this crawl, and records the result back into {@code fileRolesByUrl}.
+     * The roles accumulated so far this crawl for one file permalink, and the monitor that orders
+     * the {@code callback.store} calls consuming them.
      *
      * <p>
      * <b>Why a file, not a message, needs this (Important-1, whole-branch review Phase 3):</b>
      * {@link File#getPermalink()} is channel-independent -- {@code files.list?channel=...}
      * returns the same file object, permalink included, for every channel it is shared into --
-     * while {@link #getMessagePermalink} always returns a channel-scoped URL. Without this, a
-     * file shared into both a private and a public channel would be indexed under whichever
-     * channel {@link #processChannelFiles} happened to walk last -- {@code conversations.list}
-     * order, not controllable by an operator.
+     * while {@link SlackDataStore#getMessagePermalink} always returns a channel-scoped URL.
+     * Without this, a file shared into both a private and a public channel would be indexed under
+     * whichever channel {@link SlackDataStore#processChannelFiles} happened to walk last --
+     * {@code conversations.list} order, not controllable by an operator.
      * </p>
      *
      * <p>
@@ -1174,50 +1175,74 @@ public class SlackDataStore extends AbstractDataStore {
      * </p>
      *
      * <p>
-     * {@link ConcurrentHashMap#merge} makes the read-union-write sequence atomic per URL, so no
-     * channel's contribution to {@code fileRolesByUrl} is ever lost. It does not order the {@code
-     * callback.store} calls that follow, and there is no thread count at which it would not have
-     * to: {@link #newFixedThreadPool} builds a {@link ThreadPoolExecutor} whose queue holds only
-     * {@code nThreads} tasks, with {@link ThreadPoolExecutor.CallerRunsPolicy}, so even the
-     * default {@code number_of_threads=1} runs tasks on two threads -- once the single worker is
-     * busy and the one queue slot is full, {@code execute} rejects and the submitting thread runs
-     * the task itself. Measured against that exact construction: tasks ran on {@code
-     * [pool-1-thread-1, main]}, two of them at once. A single-threaded crawl is not a
-     * configuration this class has.
+     * <b>Why a monitor, and not just an atomic merge (issue #41):</b> making the read-union-write
+     * sequence atomic keeps every channel's contribution, but on its own it does not order the
+     * {@code callback.store} calls that follow -- and store order is what decides the indexed
+     * document: {@code IndexUpdateCallbackImpl#store} appends to its {@code DocList} in call
+     * order, and a bulk request applies two operations on the same document id in that same
+     * order, so the last store for a URL wins. There is no thread count at which that ordering
+     * comes for free: {@link SlackDataStore#newFixedThreadPool} builds a {@link
+     * ThreadPoolExecutor} whose queue holds only {@code nThreads} tasks, with {@link
+     * ThreadPoolExecutor.CallerRunsPolicy}, so even the default {@code number_of_threads=1} runs
+     * tasks on two threads -- once the single worker is busy and the one queue slot is full,
+     * {@code execute} rejects and the submitting thread runs the task itself. Measured against
+     * that exact construction: tasks ran on {@code [pool-1-thread-1, main]}, two of them at once.
+     * A single-threaded crawl is not a configuration this class has.
      * </p>
      *
      * <p>
-     * Nor is the window between a thread's merge and its store narrow: in between, the thread runs
+     * Nor is the window between a merge and the store it feeds narrow: in between, the thread runs
      * the whole {@code scriptMap} evaluation loop and then {@code IndexUpdateCallbackImpl#store},
      * whose first statement is {@code SystemHelper#calibrateCpuLoad()} -- which, under the default
-     * {@code adaptive.load.control=50}, sleeps until system CPU load falls below 50%. So the
-     * residual is real: for a file shared into two channels, whichever {@code store} lands last
-     * decides what is indexed, and it may be the one carrying the earlier, smaller union. The
-     * document is then indexed with the roles of only the channels merged up to that point --
-     * too few rather than too many, the safe direction, but nothing corrects it until a later
-     * crawl happens to land the other way. Closing it completely would mean serializing all
-     * processing of a URL, content download and extraction included, which is a disproportionate
-     * cost for what is already an uncommon case (the same file shared into multiple channels).
+     * {@code adaptive.load.control=50}, sleeps until system CPU load falls below 50%. Left
+     * unordered, the store carrying the smaller union can land last, and the file is then indexed
+     * with the roles of only the channels merged up to that point. When the task that stored last
+     * is a public channel's, contributing no roles of its own, that is no roles at all: a file
+     * shared into a private channel, indexed with no access-control list and so reachable by
+     * everyone.
      * </p>
      *
-     * @param fileRolesByUrl the crawl-scoped accumulator, keyed by file permalink
-     * @param url the file's permalink
-     * @param channelRoles the roles {@link #computeChannelRoles} resolved for the channel
-     *            currently being processed
-     * @return the deduplicated union of {@code channelRoles} and every other channel's roles
-     *         already recorded for {@code url} this crawl
+     * <p>
+     * {@link SlackDataStore#processFile} therefore holds this object's monitor from the merge
+     * through {@code callback.store}. The merges for one permalink are then totally ordered, and
+     * each store is issued inside the same critical section as its own merge; since the
+     * accumulated set only ever grows, the last store for a permalink is therefore the one
+     * carrying the fullest union. Only tasks for that same permalink ever wait on it, and a
+     * file's download and content extraction are finished before it is taken, so neither is
+     * serialized.
+     * </p>
      */
-    protected List<String> mergeFileRoles(final Map<String, List<String>> fileRolesByUrl, final String url,
-            final List<String> channelRoles) {
-        return fileRolesByUrl.merge(url, channelRoles, (existing, incoming) -> {
-            final List<String> merged = new ArrayList<>(existing);
-            for (final String role : incoming) {
-                if (!merged.contains(role)) {
-                    merged.add(role);
+    protected static class FileRoles {
+
+        /** Every channel's roles recorded for this file so far, deduplicated; guarded by {@code this}. */
+        private final List<String> roles = new ArrayList<>();
+
+        /**
+         * Creates an accumulator holding no roles yet.
+         */
+        protected FileRoles() {
+            // nothing to initialise beyond the empty accumulator above
+        }
+
+        /**
+         * Unions {@code channelRoles} into the roles already accumulated for this file by an
+         * earlier channel this crawl.
+         *
+         * @param channelRoles the roles {@link SlackDataStore#computeChannelRoles} resolved for
+         *            the channel currently being processed
+         * @return a private copy of the deduplicated union of {@code channelRoles} and every
+         *         other channel's roles already recorded for this file this crawl -- a copy, so
+         *         the list handed to the document being indexed is not one a later channel's
+         *         merge grows underneath it
+         */
+        protected synchronized List<String> merge(final List<String> channelRoles) {
+            for (final String role : channelRoles) {
+                if (!roles.contains(role)) {
+                    roles.add(role);
                 }
             }
-            return merged;
-        });
+            return new ArrayList<>(roles);
+        }
     }
 
     /**
@@ -1489,12 +1514,12 @@ public class SlackDataStore extends AbstractDataStore {
      * @param roles the search roles allowed to see this channel's content; see
      *            {@link #processChannelMessages}'s matching parameter for what {@code null} means
      * @param fileRolesByUrl accumulates, per file permalink, the union of every channel's roles
-     *            seen so far this crawl (see {@link #mergeFileRoles})
+     *            seen so far this crawl (see {@link FileRoles})
      */
     protected void processChannelFiles(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final ExecutorService executorService, final SlackClient client, final Team team, final Channel channel,
-            final AtomicReference<SlackApiException> fatalError, final List<String> roles, final Map<String, List<String>> fileRolesByUrl) {
+            final AtomicReference<SlackApiException> fatalError, final List<String> roles, final Map<String, FileRoles> fileRolesByUrl) {
         final long readInterval = (Long) configMap.get(READ_INTERVAL);
         client.getChannelFiles(channel.getId(), file -> {
             safeExecute(executorService, () -> {
@@ -1854,12 +1879,12 @@ public class SlackDataStore extends AbstractDataStore {
      * @param roles the search roles allowed to see this file; see {@link #processMessage}'s
      *            matching parameter for what {@code null} means
      * @param fileRolesByUrl accumulates, per file permalink, the union of every channel's roles
-     *            seen so far this crawl (see {@link #mergeFileRoles})
+     *            seen so far this crawl (see {@link FileRoles})
      */
     protected void processFile(final DataConfig dataConfig, final IndexUpdateCallback callback, final Map<String, Object> configMap,
             final DataStoreParams paramMap, final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap,
             final SlackClient client, final Team team, final Channel channel, final File file, final List<String> roles,
-            final Map<String, List<String>> fileRolesByUrl) {
+            final Map<String, FileRoles> fileRolesByUrl) {
         final CrawlerStatsHelper crawlerStatsHelper = ComponentUtil.getCrawlerStatsHelper();
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         final String url = file.getPermalink();
@@ -1910,41 +1935,61 @@ public class SlackDataStore extends AbstractDataStore {
             fileMap.put(MESSAGE_CHANNEL, channel.getName());
             fileMap.put(MESSAGE_PERMALINK, file.getPermalink());
             fileMap.put(MESSAGE_ATTACHMENTS, "");
-            // See the matching guard in processMessage: null must mean "key absent", not "empty
-            // list", to keep permission_sync=false byte-identical to before this feature (F9/D5).
-            // Merged (Important-1) rather than used as-is: file.getPermalink() is
-            // channel-independent, so without this a file shared into multiple channels would be
-            // indexed under whichever channel's roles happened to be stored last.
-            if (roles != null) {
-                fileMap.put(MESSAGE_ROLES, mergeFileRoles(fileRolesByUrl, url, roles));
-            }
             resultMap.put(MESSAGE, fileMap);
 
-            crawlerStatsHelper.record(statsKey, StatsAction.PREPARED);
+            // Everything from the script evaluation to the store, as one block, because it runs
+            // inside the per-permalink critical section below when roles are being merged and
+            // outside it when there are none to merge -- see FileRoles for why the merge and the
+            // store it feeds must not be separable.
+            final Runnable evaluateAndStore = () -> {
+                crawlerStatsHelper.record(statsKey, StatsAction.PREPARED);
 
-            if (logger.isDebugEnabled()) {
-                logger.debug("fileMap: {}", fileMap);
-            }
+                if (logger.isDebugEnabled()) {
+                    logger.debug("fileMap: {}", fileMap);
+                }
 
-            final String scriptType = getScriptType(paramMap);
-            for (final Map.Entry<String, String> entry : scriptMap.entrySet()) {
-                final Object convertValue = convertValue(scriptType, entry.getValue(), resultMap);
-                if (convertValue != null) {
-                    dataMap.put(entry.getKey(), convertValue);
+                final String scriptType = getScriptType(paramMap);
+                for (final Map.Entry<String, String> entry : scriptMap.entrySet()) {
+                    final Object convertValue = convertValue(scriptType, entry.getValue(), resultMap);
+                    if (convertValue != null) {
+                        dataMap.put(entry.getKey(), convertValue);
+                    }
+                }
+
+                crawlerStatsHelper.record(statsKey, StatsAction.EVALUATED);
+
+                if (logger.isDebugEnabled()) {
+                    logger.debug("dataMap: {}", dataMap);
+                }
+
+                if (dataMap.get("url") instanceof String statsUrl) {
+                    statsKey.setUrl(statsUrl);
+                }
+                callback.store(localParams, dataMap);
+                crawlerStatsHelper.record(statsKey, StatsAction.FINISHED);
+            };
+
+            // See the matching guard in processMessage: null must mean "key absent", not "empty
+            // list", to keep permission_sync=false byte-identical to before this feature (F9/D5)
+            // -- down to not allocating an accumulator entry per file URL when the feature is off.
+            if (roles == null) {
+                evaluateAndStore.run();
+            } else {
+                // Merged (Important-1) rather than used as-is: file.getPermalink() is
+                // channel-independent, so without this a file shared into multiple channels would
+                // be indexed under whichever channel's roles happened to be stored last. Merge and
+                // store are one critical section per permalink (issue #41): merging atomically
+                // still left the store carrying the smaller union free to land last, indexing the
+                // file with fewer roles than the channels it is shared into call for -- with none
+                // at all, when the channel that stored last was a public one. Only another task
+                // for this same permalink ever waits here, and only for a script evaluation and a
+                // store: the download and extraction above are already done.
+                final FileRoles fileRoles = fileRolesByUrl.computeIfAbsent(url, k -> new FileRoles());
+                synchronized (fileRoles) {
+                    fileMap.put(MESSAGE_ROLES, fileRoles.merge(roles));
+                    evaluateAndStore.run();
                 }
             }
-
-            crawlerStatsHelper.record(statsKey, StatsAction.EVALUATED);
-
-            if (logger.isDebugEnabled()) {
-                logger.debug("dataMap: {}", dataMap);
-            }
-
-            if (dataMap.get("url") instanceof String statsUrl) {
-                statsKey.setUrl(statsUrl);
-            }
-            callback.store(localParams, dataMap);
-            crawlerStatsHelper.record(statsKey, StatsAction.FINISHED);
         } catch (final CrawlingAccessException e) {
             logDocumentFailure(url, dataMap, e);
 
