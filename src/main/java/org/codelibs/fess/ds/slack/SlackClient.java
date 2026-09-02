@@ -444,11 +444,15 @@ public class SlackClient implements Closeable {
         if (!paramMap.containsKey(CHANNELS_PARAM) || CHANNELS_ALL.equals(paramMap.get(CHANNELS_PARAM))) {
             getAllChannels(consumer);
         } else {
-            for (final String name : paramMap.getAsString(CHANNELS_PARAM, StringUtil.EMPTY).split(CHANNELS_SEPARATOR)) {
+            for (final String rawName : paramMap.getAsString(CHANNELS_PARAM, StringUtil.EMPTY).split(CHANNELS_SEPARATOR)) {
+                final String name = rawName.trim();
+                if (StringUtil.isBlank(name)) {
+                    continue;
+                }
                 try {
                     consumer.accept(getChannel(name));
                 } catch (final ExecutionException e) {
-                    logger.warn("Failed to get a channel.", e);
+                    logger.warn("Failed to get a channel: {}", name, e);
                 }
             }
         }
@@ -472,17 +476,19 @@ public class SlackClient implements Closeable {
      * @param consumer the function to process each file
      */
     public void getChannelFiles(final String channelId, final Integer count, final Consumer<File> consumer) {
-        FilesListResponse response = filesList().channel(channelId).types(getFileTypes()).count(count).execute();
+        int page = 1;
         while (true) {
+            final FilesListResponse response = filesList().channel(channelId).types(getFileTypes()).count(count).page(page).execute();
             if (!response.ok()) {
                 logger.warn("Slack API error occured on \"files.list\": {}", response.responseBody());
                 return;
             }
             response.getFiles().forEach(consumer);
-            if (response.getPaging().getPage() >= response.getPaging().getTotal()) {
+            final FilesListResponse.Paging paging = response.getPaging();
+            if (paging == null || paging.getPages() == null || page >= paging.getPages().intValue()) {
                 break;
             }
-            response = filesList().channel(channelId).count(count).page(response.getPaging().getPage() + 1).execute();
+            page++;
         }
     }
 

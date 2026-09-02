@@ -120,6 +120,34 @@ public class SlackDataStoreTest extends UnitDsTestCase {
         assertFalse(fileCrawl);
     }
 
+    // Test getSupportedMimeTypes method
+    @Test
+    public void test_getSupportedMimeTypes_defaultValue() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        final java.util.List<String> mimeTypes = dataStore.getSupportedMimeTypes(paramMap);
+        assertEquals(1, mimeTypes.size());
+        assertEquals(".*", mimeTypes.get(0));
+    }
+
+    @Test
+    public void test_getSupportedMimeTypes_blankFallsBackToDefault() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("supported_mimetypes", "");
+        final java.util.List<String> mimeTypes = dataStore.getSupportedMimeTypes(paramMap);
+        assertEquals(1, mimeTypes.size());
+        assertEquals(".*", mimeTypes.get(0));
+    }
+
+    @Test
+    public void test_getSupportedMimeTypes_explicitValue() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("supported_mimetypes", "application/pdf,text/plain");
+        final java.util.List<String> mimeTypes = dataStore.getSupportedMimeTypes(paramMap);
+        assertEquals(2, mimeTypes.size());
+        assertEquals("application/pdf", mimeTypes.get(0));
+        assertEquals("text/plain", mimeTypes.get(1));
+    }
+
     // Test getName method
     @Test
     public void test_getName() {
