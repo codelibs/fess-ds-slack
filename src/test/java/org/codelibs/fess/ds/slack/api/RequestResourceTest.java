@@ -21,8 +21,12 @@ import java.nio.file.Path;
 import java.util.stream.Stream;
 
 import org.codelibs.fess.ds.slack.SlackApiMockServer;
+import org.codelibs.fess.ds.slack.SlackDataStoreException;
 import org.codelibs.fess.ds.slack.UnitDsTestCase;
+import org.codelibs.fess.ds.slack.api.method.team.TeamInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.team.TeamInfoResponse;
 import org.codelibs.fess.entity.DataStoreParams;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 
@@ -41,6 +45,17 @@ public class RequestResourceTest extends UnitDsTestCase {
     public void tearDown(final TestInfo testInfo) throws Exception {
         server.stop();
         super.tearDown(testInfo);
+    }
+
+    /**
+     * {@code ObjectMapper.readValue((String) null, ...)} throws {@link IllegalArgumentException},
+     * not {@link java.io.IOException}, so a catch narrowed to {@code IOException} would let this
+     * escape unwrapped instead of producing the {@link SlackDataStoreException} every other parse
+     * failure produces.
+     */
+    @Test
+    public void test_parseResponseWithNullContentThrowsSlackDataStoreException() {
+        Assertions.assertThrows(SlackDataStoreException.class, () -> new TeamInfoRequest(null).parseResponse(null, TeamInfoResponse.class));
     }
 
     /**

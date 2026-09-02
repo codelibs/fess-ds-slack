@@ -52,8 +52,6 @@ public class Message {
     protected String threadTs;
     /** List of files attached to the message. */
     protected List<File> files;
-    /** Whether this message was broadcast from a thread to the channel. */
-    protected Boolean isThreadBroadcast;
     /** Comment associated with a file share. */
     protected Comment comment;
     /** List of message attachments with rich formatting. */
@@ -138,15 +136,6 @@ public class Message {
      */
     public List<File> getFiles() {
         return files;
-    }
-
-    /**
-     * Returns whether this message was broadcast from a thread to the channel.
-     *
-     * @return true if broadcast from thread, false otherwise
-     */
-    public boolean isThreadBroadcast() {
-        return isThreadBroadcast != null ? isThreadBroadcast : false;
     }
 
     /**

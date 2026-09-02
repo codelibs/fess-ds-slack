@@ -118,8 +118,20 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String MAX_FILESIZE = "max_filesize";
     /** Parameter name for enabling file crawling. */
     protected static final String FILE_CRAWL = "file_crawl";
+    /** Regular expression pattern that matches any MIME type; the default of {@link #SUPPORTED_MIMETYPES}. */
+    protected static final String MATCH_ALL_MIMETYPES = ".*";
 
-    /** Parameter keys withheld from crawl scripts: credentials and proxy configuration. */
+    /**
+     * Parameter keys withheld from crawl scripts: credentials and proxy configuration.
+     *
+     * <p>
+     * This is a denylist over an otherwise-complete copy of the parameter map, not an
+     * allowlist: any new parameter is exposed to scripts by default. Whoever adds a new
+     * credential-shaped parameter (a token, a password, a secret key, ...) must add its key
+     * here, or it leaks into every script's data map the same way {@link SlackClient#TOKEN_PARAM}
+     * did before this set existed.
+     * </p>
+     */
     protected static final Set<String> SECRET_PARAMS =
             Set.of(SlackClient.TOKEN_PARAM, SlackClient.PROXY_HOST_PARAM, SlackClient.PROXY_PORT_PARAM);
 
@@ -231,8 +243,8 @@ public class SlackDataStore extends AbstractDataStore {
      * @return the list of supported MIME type patterns
      */
     protected List<String> getSupportedMimeTypes(final DataStoreParams paramMap) {
-        final String value = paramMap.getAsString(SUPPORTED_MIMETYPES, ".*");
-        final String effective = StringUtil.isNotBlank(value) ? value : ".*";
+        final String value = paramMap.getAsString(SUPPORTED_MIMETYPES, MATCH_ALL_MIMETYPES);
+        final String effective = StringUtil.isNotBlank(value) ? value : MATCH_ALL_MIMETYPES;
         return Arrays.stream(StringUtil.split(effective, ",")).map(String::trim).collect(Collectors.toList());
     }
 
@@ -258,6 +270,7 @@ public class SlackDataStore extends AbstractDataStore {
         try {
             urlFilter = ComponentUtil.getComponent(UrlFilter.class);
         } catch (final ComponentNotFoundException e) {
+            logger.warn("UrlFilter component is not registered; {} and {} will not be applied.", INCLUDE_PATTERN, EXCLUDE_PATTERN, e);
             return null;
         }
         final String include = paramMap.getAsString(INCLUDE_PATTERN);
@@ -310,12 +323,25 @@ public class SlackDataStore extends AbstractDataStore {
         client.getChannelMessages(channel.getId(), message -> {
             executorService.execute(() -> {
                 processMessage(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, message);
-                if (message.getThreadTs() != null) {
+                if (isThreadParent(message)) {
                     processMessageReplies(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel,
                             message);
                 }
             });
         });
+    }
+
+    /**
+     * Returns whether the given message is the parent of a thread. Slack
+     * identifies a parent by its thread_ts being equal to its ts; a reply
+     * carries the parent's thread_ts and a different ts.
+     *
+     * @param message the message to test
+     * @return true if the message starts a thread
+     */
+    protected boolean isThreadParent(final Message message) {
+        final String threadTs = message.getThreadTs();
+        return threadTs != null && threadTs.equals(message.getTs());
     }
 
     /**
@@ -570,8 +596,7 @@ public class SlackDataStore extends AbstractDataStore {
             }
 
             final String fileContent = getFileContent(client, file, ignoreError);
-            fileMap.put(MESSAGE_TITLE,
-                    Stream.of(file.getName(), file.getTitle()).filter(StringUtil::isNotBlank).collect(Collectors.joining(" ")));
+            fileMap.put(MESSAGE_TITLE, getFileTitle(file));
             fileMap.put(MESSAGE_TEXT, getFileText(file, fileContent));
             // fileMap.put(MESSAGE_TEAM, team.getName());
             fileMap.put(MESSAGE_TIMESTAMP, getFileTimestamp(file));
@@ -652,11 +677,24 @@ public class SlackDataStore extends AbstractDataStore {
     /**
      * Converts a message timestamp to a Date object.
      *
+     * <p>
+     * A message with no {@code ts} can still reach here with a non-empty permalink -- see
+     * {@link #getMessagePermalink} -- so this must not assume {@code ts} is present. Mirrors
+     * {@link #getFileTimestamp}, which returns {@code null} rather than throwing when a file
+     * carries neither {@code created} nor {@code timestamp}: the message still indexes, just
+     * without a timestamp, instead of failing with an unhelpful {@link NullPointerException}
+     * recorded under an empty URL.
+     * </p>
+     *
      * @param message the message containing the timestamp
-     * @return the timestamp as a Date object
+     * @return the timestamp as a Date object, or {@code null} if the message carries no {@code ts}
      */
     protected Date getMessageTimestamp(final Message message) {
-        return new Date(Math.round(Double.parseDouble(message.getTs()) * 1000));
+        final String ts = message.getTs();
+        if (ts == null) {
+            return null;
+        }
+        return new Date(Math.round(Double.parseDouble(ts) * 1000));
     }
 
     /**
@@ -800,6 +838,17 @@ public class SlackDataStore extends AbstractDataStore {
             }
         }
         return permalink;
+    }
+
+    /**
+     * Builds the indexed title for a file: its name and its Slack-assigned title, joined by a
+     * space and each skipped when blank.
+     *
+     * @param file the file being indexed
+     * @return the file name and title joined by a space
+     */
+    protected String getFileTitle(final File file) {
+        return Stream.of(file.getName(), file.getTitle()).filter(StringUtil::isNotBlank).collect(Collectors.joining(" "));
     }
 
     /**

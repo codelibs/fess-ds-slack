@@ -101,9 +101,58 @@ public class SlackDataStoreFieldValueTest extends UnitDsTestCase {
         assertEquals("report.pdf\nCONTENT", dataStore.getFileText(file, "CONTENT"));
     }
 
+    /** The extracted sibling of {@code getFileText}: name and Slack-assigned title, space-joined. */
+    @Test
+    public void test_fileTitleJoinsNameAndTitle() {
+        final File file = fileNamedAndTitled("report.pdf", "Quarterly Report");
+        assertEquals("report.pdf Quarterly Report", dataStore.getFileTitle(file));
+    }
+
+    @Test
+    public void test_fileTitleWithoutTitleUsesNameOnly() {
+        final File file = fileNamed("report.pdf");
+        assertEquals("report.pdf", dataStore.getFileTitle(file));
+    }
+
+    @Test
+    public void test_fileTitleWithoutNameOrTitleIsEmpty() {
+        final File file = new FilesListRequest(null).parseResponse("{\"ok\":true,\"files\":[{\"id\":\"F1\"}]}", FilesListResponse.class)
+                .getFiles()
+                .get(0);
+        assertEquals("", dataStore.getFileTitle(file));
+    }
+
+    /** A `ts` that parses normally must still work after the null guard was added. */
+    @Test
+    public void test_messageTimestampParsesTs() {
+        final Message message = firstMessage("{\"ok\":true,\"messages\":[{\"ts\":\"1531763254.000100\"}]}");
+        assertEquals(1531763254000L, dataStore.getMessageTimestamp(message).getTime());
+    }
+
+    /**
+     * A message can reach here with no `ts` at all: {@link SlackDataStore#getMessagePermalink}
+     * returns an already-set permalink without requiring `ts`, so a message with a permalink but
+     * no `ts` survives that guard. Before this fix, {@code Double.parseDouble(null)} here threw
+     * an NPE that landed the message in the failure records under an empty URL instead of
+     * either indexing it or failing legibly.
+     */
+    @Test
+    public void test_messageTimestampWithoutTsReturnsNull() {
+        final Message message = firstMessage("{\"ok\":true,\"messages\":[{\"text\":\"TEXT\"}]}");
+        assertNull("no ts field", dataStore.getMessageTimestamp(message));
+    }
+
     private File fileNamed(final String name) {
         return new FilesListRequest(null)
                 .parseResponse("{\"ok\":true,\"files\":[{\"id\":\"F1\",\"name\":\"" + name + "\"}]}", FilesListResponse.class)
+                .getFiles()
+                .get(0);
+    }
+
+    private File fileNamedAndTitled(final String name, final String title) {
+        return new FilesListRequest(null)
+                .parseResponse("{\"ok\":true,\"files\":[{\"id\":\"F1\",\"name\":\"" + name + "\",\"title\":\"" + title + "\"}]}",
+                        FilesListResponse.class)
                 .getFiles()
                 .get(0);
     }

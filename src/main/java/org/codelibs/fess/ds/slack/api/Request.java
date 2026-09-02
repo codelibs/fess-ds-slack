@@ -120,6 +120,15 @@ public abstract class Request<T extends Response> {
      * logged separately, at debug level only.
      * </p>
      *
+     * <p>
+     * The catch is {@link Exception}, not {@link IOException}: {@code
+     * ObjectMapper.readValue((String) null, ...)} throws {@link
+     * IllegalArgumentException}, which is not an {@code IOException} and would
+     * otherwise escape uncaught -- as would a null {@code valueType} or any
+     * other unchecked failure from Jackson -- defeating the point of wrapping
+     * every parse failure in a single, well-formed {@link SlackDataStoreException}.
+     * </p>
+     *
      * @param content the raw JSON response content from the API
      * @param valueType the class type to parse the response into
      * @return the parsed response object
@@ -128,7 +137,7 @@ public abstract class Request<T extends Response> {
     public T parseResponse(final String content, final Class<T> valueType) {
         try {
             return mapper.readValue(content, valueType).responseBody(content);
-        } catch (final IOException e) {
+        } catch (final Exception e) {
             if (logger.isDebugEnabled()) {
                 logger.debug("Unparseable Slack API response: {}", content);
             }

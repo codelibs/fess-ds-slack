@@ -17,6 +17,7 @@ package org.codelibs.fess.ds.slack;
 
 import java.io.Closeable;
 import java.net.Proxy;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
@@ -42,6 +43,7 @@ import org.codelibs.fess.ds.slack.api.method.files.FilesInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.files.FilesListRequest;
 import org.codelibs.fess.ds.slack.api.method.files.FilesListResponse;
 import org.codelibs.fess.ds.slack.api.method.team.TeamInfoRequest;
+import org.codelibs.fess.ds.slack.api.method.team.TeamInfoResponse;
 import org.codelibs.fess.ds.slack.api.method.users.UsersInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListRequest;
 import org.codelibs.fess.ds.slack.api.method.users.UsersListResponse;
@@ -132,6 +134,8 @@ public class SlackClient implements Closeable {
     protected LoadingCache<String, Bot> botsCache;
     /** Cache for channel information to improve performance. */
     protected LoadingCache<String, Channel> channelsCache;
+    /** Channels captured during the constructor preload, in listing order. */
+    protected final List<Channel> preloadedChannels = new ArrayList<>();
 
     /**
      * Creates a new Slack client with the specified configuration parameters.
@@ -166,7 +170,10 @@ public class SlackClient implements Closeable {
         }
 
         usersCache = CacheBuilder.newBuilder()
-                .maximumSize(Integer.parseInt(paramMap.getAsString(USER_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
+                // Each user is cached under both its ID and its name (see the preload
+                // below), so the effective capacity is half the configured size unless
+                // we double it here.
+                .maximumSize(Long.parseLong(paramMap.getAsString(USER_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)) * 2L)
                 .build(new CacheLoader<String, User>() {
                     @Override
                     public User load(final String key) {
@@ -174,6 +181,8 @@ public class SlackClient implements Closeable {
                     }
                 });
         botsCache = CacheBuilder.newBuilder()
+                // Bots are cached only under the key they were looked up by, so this
+                // cache is not subject to the double-keying that users and channels are.
                 .maximumSize(Integer.parseInt(paramMap.getAsString(BOT_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
                 .build(new CacheLoader<String, Bot>() {
                     @Override
@@ -182,7 +191,10 @@ public class SlackClient implements Closeable {
                     }
                 });
         channelsCache = CacheBuilder.newBuilder()
-                .maximumSize(Integer.parseInt(paramMap.getAsString(CHANNEL_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)))
+                // Each channel is cached under both its ID and its name (see the preload
+                // below), so the effective capacity is half the configured size unless
+                // we double it here.
+                .maximumSize(Long.parseLong(paramMap.getAsString(CHANNEL_CACHE_SIZE_PARAM, DEFAULT_CACHE_SIZE)) * 2L)
                 .build(new CacheLoader<String, Channel>() {
                     @Override
                     public Channel load(final String key) {
@@ -197,6 +209,7 @@ public class SlackClient implements Closeable {
         getAllChannels(channel -> {
             channelsCache.put(channel.getId(), channel);
             channelsCache.put(channel.getName(), channel);
+            preloadedChannels.add(channel);
         });
     }
 
@@ -376,10 +389,23 @@ public class SlackClient implements Closeable {
     /**
      * Retrieves information about the current team.
      *
-     * @return the team information
+     * <p>
+     * A {@code null} return makes callers fall back to resolving each
+     * message's permalink via a dedicated {@code chat.getPermalink} call
+     * instead of building the URL locally from the team domain, so a
+     * failure here is logged rather than left silent.
+     * </p>
+     *
+     * @return the team information, or {@code null} if the call failed
      */
     public Team getTeam() {
-        return teamInfo().execute().getTeam();
+        final TeamInfoResponse response = teamInfo().execute();
+        if (!response.ok()) {
+            logger.warn("Failed to get the team info: {}. Permalinks will be resolved per message via chat.getPermalink, "
+                    + "which multiplies API calls. Check that the token has the team:read scope.", response.getError());
+            return null;
+        }
+        return response.getTeam();
     }
 
     /**
@@ -504,7 +530,16 @@ public class SlackClient implements Closeable {
             }
             response.getFiles().forEach(consumer);
             final FilesListResponse.Paging paging = response.getPaging();
-            if (paging == null || paging.getPages() == null || page >= paging.getPages().intValue()) {
+            if (paging == null || paging.getPages() == null) {
+                // Without paging info there is no way to know whether more pages remain, so
+                // stop here rather than loop forever. Files beyond this page are silently
+                // under-indexed; warn so that is visible instead of looking like a complete
+                // channel.
+                logger.warn("\"files.list\" response for channel {} on page {} carries no paging info; "
+                        + "any files beyond this page were not indexed.", channelId, page);
+                break;
+            }
+            if (page >= paging.getPages().intValue()) {
                 break;
             }
             page++;
@@ -514,9 +549,21 @@ public class SlackClient implements Closeable {
     /**
      * Retrieves all channels using default pagination.
      *
+     * <p>
+     * The constructor preload already walks the full channel list once to
+     * warm {@link #channelsCache}; this reuses that listing instead of
+     * walking {@code conversations.list} a second time. {@code
+     * conversations.list} is a Tier 2 method, and re-walking it here made it
+     * the first thing every crawl exhausted its rate limit on.
+     * </p>
+     *
      * @param consumer the function to process each channel
      */
     public void getAllChannels(final Consumer<Channel> consumer) {
+        if (!preloadedChannels.isEmpty()) {
+            preloadedChannels.forEach(consumer);
+            return;
+        }
         getAllChannels(Integer.parseInt(paramMap.getAsString(CHANNEL_COUNT_PARAM, DEFAULT_CHANNEL_COUNT)), consumer);
     }
 
@@ -604,7 +651,15 @@ public class SlackClient implements Closeable {
             final List<Message> messages = response.getMessages();
             for (int i = 1; i < messages.size(); i++) {
                 final Message message = messages.get(i);
-                if (message.isThreadBroadcast()) {
+                // Slack documents thread_broadcast as a message subtype, not as a boolean
+                // field: Message#isThreadBroadcast() is always false because the backing
+                // field is protected with no setter and Jackson's default field visibility
+                // is PUBLIC_ONLY, so none of the plausible payload shapes ever populate it.
+                // Without this guard actually firing, a broadcast reply is fetched here a
+                // second time -- once via conversations.history, once via this walk -- and
+                // only avoids being duplicated because both resolve the same permalink and
+                // the second store overwrites the first.
+                if ("thread_broadcast".equals(message.getSubtype())) {
                     continue;
                 }
                 consumer.accept(message);

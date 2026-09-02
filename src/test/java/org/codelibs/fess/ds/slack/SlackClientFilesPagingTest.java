@@ -86,6 +86,23 @@ public class SlackClientFilesPagingTest extends UnitDsTestCase {
         assertEquals(1, server.getRequestCount("/api/files.list"));
     }
 
+    /**
+     * A response with no `paging` object at all must stop after the first page instead of
+     * looping forever or throwing a NullPointerException. Files on any later page are silently
+     * under-indexed -- {@code getChannelFiles} logs a warning for this case -- but the first
+     * page's files must still reach the consumer.
+     */
+    @Test
+    public void test_missingPagingStopsAfterFirstPage() {
+        server.enqueue("/api/files.list", SlackApiMockServer.json("{\"ok\":true,\"files\":[{\"id\":\"F1_0\"}]}"));
+
+        final List<File> collected = new ArrayList<>();
+        newClient().getChannelFiles("C1", 20, collected::add);
+
+        assertEquals(1, server.getRequestCount("/api/files.list"));
+        assertEquals(1, collected.size());
+    }
+
     private static String filesPage(final int page, final int pages, final int total, final int fileCount) {
         final StringBuilder buf = new StringBuilder("{\"ok\":true,\"files\":[");
         for (int i = 0; i < fileCount; i++) {

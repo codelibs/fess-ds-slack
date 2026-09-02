@@ -102,4 +102,32 @@ public class SlackClientChannelsTest extends UnitDsTestCase {
         assertEquals(1, channels.size());
         assertEquals("general", channels.get(0).getName());
     }
+
+    /**
+     * `channels=*all` must not walk conversations.list twice.
+     *
+     * <p>
+     * The first assertion, not the second, is what fails pre-fix: the one
+     * enqueued response is consumed by the constructor's preload, so the
+     * crawl's own (redundant) conversations.list call drains an empty queue
+     * and gets the mock server's default empty-page body. The channel is
+     * silently dropped rather than duplicated, so {@code channels.size()}
+     * comes back {@code 0}, not {@code 2}.
+     * </p>
+     */
+    @Test
+    public void test_allChannelsFetchesConversationsListOnce() {
+        server.enqueue("/api/conversations.list", SlackApiMockServer
+                .json("{\"ok\":true,\"channels\":[{\"id\":\"C1\",\"name\":\"general\"}],\"response_metadata\":{\"next_cursor\":\"\"}}"));
+
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-test");
+        paramMap.put("channels", "*all");
+
+        final List<Channel> channels = new ArrayList<>();
+        server.newClient(paramMap).getChannels(channels::add);
+
+        assertEquals(1, channels.size());
+        assertEquals(1, server.getRequestCount("/api/conversations.list"));
+    }
 }
