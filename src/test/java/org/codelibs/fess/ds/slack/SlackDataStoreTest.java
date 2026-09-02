@@ -15,23 +15,14 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 
-import java.util.HashMap;
-import java.util.Map;
-
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.codelibs.fess.ds.callback.IndexUpdateCallback;
 import org.codelibs.fess.entity.DataStoreParams;
-import org.codelibs.fess.mylasta.direction.FessConfig;
-import org.codelibs.fess.opensearch.config.exentity.DataConfig;
 import org.codelibs.fess.util.ComponentUtil;
 import org.codelibs.fess.ds.slack.UnitDsTestCase;
 
 public class SlackDataStoreTest extends UnitDsTestCase {
-
-    private static Logger logger = LogManager.getLogger(SlackDataStoreTest.class);
 
     public SlackDataStore dataStore;
 
@@ -57,56 +48,15 @@ public class SlackDataStoreTest extends UnitDsTestCase {
         super.tearDown(testInfo);
     }
 
-    public void test_storeData() {
-        // doStoreDataTest();
-    }
-
-    protected void doStoreDataTest() {
-
-        final DataConfig dataConfig = new DataConfig();
-        final IndexUpdateCallback callback = new IndexUpdateCallback() {
-            @Override
-            public void store(DataStoreParams paramMap, Map<String, Object> dataMap) {
-                logger.info("[{}.{}] dataMap = {}", getClass(), getName(), dataMap);
-            }
-
-            @Override
-            public long getExecuteTime() {
-                return 0;
-            }
-
-            @Override
-            public long getDocumentSize() {
-                return 0;
-            }
-
-            @Override
-            public void commit() {
-            }
-        };
-        final DataStoreParams paramMap = new DataStoreParams();
-        paramMap.put("token", "");
-        paramMap.put("channels", "");
-        final Map<String, String> scriptMap = new HashMap<>();
-        final Map<String, Object> defaultDataMap = new HashMap<>();
-
-        final FessConfig fessConfig = ComponentUtil.getFessConfig();
-        scriptMap.put(fessConfig.getIndexFieldTitle(), "message.user + \" #\" + message.channel");
-        scriptMap.put(fessConfig.getIndexFieldContent(), "message.text + \"\\n\" + message.attachments");
-        scriptMap.put(fessConfig.getIndexFieldCreated(), "message.timestamp");
-        scriptMap.put(fessConfig.getIndexFieldUrl(), "message.permalink");
-
-        dataStore.storeData(dataConfig, callback, paramMap, scriptMap, defaultDataMap);
-
-    }
-
     // Test getMaxFilesize method
+    @Test
     public void test_getMaxFilesize_defaultValue() {
         final DataStoreParams paramMap = new DataStoreParams();
         final long maxFilesize = dataStore.getMaxFilesize(paramMap);
         assertEquals(10000000L, maxFilesize);
     }
 
+    @Test
     public void test_getMaxFilesize_validValue() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("max_filesize", "5000000");
@@ -114,6 +64,7 @@ public class SlackDataStoreTest extends UnitDsTestCase {
         assertEquals(5000000L, maxFilesize);
     }
 
+    @Test
     public void test_getMaxFilesize_invalidValue() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("max_filesize", "invalid");
@@ -122,12 +73,14 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     }
 
     // Test isIgnoreError method
+    @Test
     public void test_isIgnoreError_defaultValue() {
         final DataStoreParams paramMap = new DataStoreParams();
         final boolean ignoreError = dataStore.isIgnoreError(paramMap);
         assertTrue(ignoreError);
     }
 
+    @Test
     public void test_isIgnoreError_trueValue() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("ignore_error", "true");
@@ -135,6 +88,7 @@ public class SlackDataStoreTest extends UnitDsTestCase {
         assertTrue(ignoreError);
     }
 
+    @Test
     public void test_isIgnoreError_falseValue() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("ignore_error", "false");
@@ -143,12 +97,14 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     }
 
     // Test isFileCrawl method
+    @Test
     public void test_isFileCrawl_defaultValue() {
         final DataStoreParams paramMap = new DataStoreParams();
         final boolean fileCrawl = dataStore.isFileCrawl(paramMap);
         assertFalse(fileCrawl);
     }
 
+    @Test
     public void test_isFileCrawl_trueValue() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("file_crawl", "true");
@@ -156,6 +112,7 @@ public class SlackDataStoreTest extends UnitDsTestCase {
         assertTrue(fileCrawl);
     }
 
+    @Test
     public void test_isFileCrawl_falseValue() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("file_crawl", "false");
@@ -164,19 +121,22 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     }
 
     // Test getName method
+    @Test
     public void test_getName() {
         final String name = dataStore.getName();
         assertEquals("SlackDataStore", name);
     }
 
     // Test setExtractorName method
+    @Test
     public void test_setExtractorName() {
+        assertEquals("tikaExtractor", dataStore.extractorName);
         dataStore.setExtractorName("customExtractor");
-        // No direct getter to verify, but we can ensure no exception is thrown
-        assertNotNull(dataStore);
+        assertEquals("customExtractor", dataStore.extractorName);
     }
 
     // Test thread pool creation
+    @Test
     public void test_newFixedThreadPool() {
         final java.util.concurrent.ExecutorService executorService = dataStore.newFixedThreadPool(2);
         assertNotNull(executorService);
@@ -184,12 +144,14 @@ public class SlackDataStoreTest extends UnitDsTestCase {
     }
 
     // Test newFixedThreadPool with different thread counts
+    @Test
     public void test_newFixedThreadPool_singleThread() {
         final java.util.concurrent.ExecutorService executorService = dataStore.newFixedThreadPool(1);
         assertNotNull(executorService);
         executorService.shutdown();
     }
 
+    @Test
     public void test_newFixedThreadPool_multipleThreads() {
         final java.util.concurrent.ExecutorService executorService = dataStore.newFixedThreadPool(5);
         assertNotNull(executorService);

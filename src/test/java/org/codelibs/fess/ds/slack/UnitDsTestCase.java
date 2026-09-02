@@ -15,6 +15,7 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import org.codelibs.fess.ds.slack.api.Request;
 import org.codelibs.fess.util.ComponentUtil;
 import org.dbflute.utflute.lastaflute.LastaFluteTestCase;
 import org.junit.jupiter.api.Assertions;
@@ -37,6 +38,11 @@ public abstract class UnitDsTestCase extends LastaFluteTestCase {
     @Override
     protected void tearDown(TestInfo testInfo) throws Exception {
         ComponentUtil.setFessConfig(null);
+        // Request.setEndpoint/resetEndpoint mutate process-wide static state (see
+        // Request's javadoc). Reset it here unconditionally so a subclass that
+        // forgets to call SlackApiMockServer#stop() (or fails before reaching it)
+        // cannot leave every later test class in this JVM pointed at a closed port.
+        Request.resetEndpoint();
         super.tearDown(testInfo);
     }
 

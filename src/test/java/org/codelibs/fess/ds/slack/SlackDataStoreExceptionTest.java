@@ -15,6 +15,7 @@
  */
 package org.codelibs.fess.ds.slack;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 
 import org.codelibs.fess.ds.slack.UnitDsTestCase;
@@ -24,6 +25,7 @@ import org.codelibs.fess.ds.slack.UnitDsTestCase;
  */
 public class SlackDataStoreExceptionTest extends UnitDsTestCase {
 
+    @Test
     public void test_constructor_withMessage() {
         final String message = "Test error message";
         final SlackDataStoreException exception = new SlackDataStoreException(message);
@@ -33,6 +35,7 @@ public class SlackDataStoreExceptionTest extends UnitDsTestCase {
         assertNull(exception.getCause());
     }
 
+    @Test
     public void test_constructor_withMessageAndCause() {
         final String message = "Test error message";
         final Throwable cause = new RuntimeException("Cause exception");
@@ -45,6 +48,7 @@ public class SlackDataStoreExceptionTest extends UnitDsTestCase {
         assertEquals("Cause exception", exception.getCause().getMessage());
     }
 
+    @Test
     public void test_constructor_withCause() {
         final Throwable cause = new IllegalArgumentException("Invalid argument");
         final SlackDataStoreException exception = new SlackDataStoreException(cause);
@@ -55,6 +59,7 @@ public class SlackDataStoreExceptionTest extends UnitDsTestCase {
         assertEquals("Invalid argument", exception.getCause().getMessage());
     }
 
+    @Test
     public void test_exceptionCanBeThrown() {
         try {
             throw new SlackDataStoreException("Test exception");
@@ -63,18 +68,21 @@ public class SlackDataStoreExceptionTest extends UnitDsTestCase {
         }
     }
 
+    @Test
     public void test_exceptionWithNullMessage() {
         final SlackDataStoreException exception = new SlackDataStoreException((String) null);
         assertNotNull(exception);
         assertNull(exception.getMessage());
     }
 
+    @Test
     public void test_exceptionWithNullCause() {
         final SlackDataStoreException exception = new SlackDataStoreException((Throwable) null);
         assertNotNull(exception);
         assertNull(exception.getCause());
     }
 
+    @Test
     public void test_exceptionWithNullMessageAndCause() {
         final SlackDataStoreException exception = new SlackDataStoreException(null, null);
         assertNotNull(exception);
@@ -82,12 +90,14 @@ public class SlackDataStoreExceptionTest extends UnitDsTestCase {
         assertNull(exception.getCause());
     }
 
+    @Test
     public void test_exceptionInheritance() {
         final SlackDataStoreException exception = new SlackDataStoreException("Test");
         assertTrue(exception instanceof Exception);
         assertTrue(exception instanceof RuntimeException);
     }
 
+    @Test
     public void test_exceptionStackTrace() {
         final SlackDataStoreException exception = new SlackDataStoreException("Test with stack trace");
         final StackTraceElement[] stackTrace = exception.getStackTrace();
