@@ -17,6 +17,7 @@ package org.codelibs.fess.ds.slack;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.Level;
@@ -24,6 +25,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.Logger;
 import org.apache.logging.log4j.core.appender.AbstractAppender;
+import org.apache.logging.log4j.core.config.Property;
 
 /**
  * A minimal, in-memory Log4j2 appender for asserting on log output in tests where the log level
@@ -39,6 +41,15 @@ import org.apache.logging.log4j.core.appender.AbstractAppender;
  */
 public final class TestLogAppender extends AbstractAppender {
 
+    /**
+     * Source of this appender's unique name suffix. {@code System.identityHashCode} is not
+     * reliably unique -- two distinct objects can collide on it -- and Log4j2 keys an appender by
+     * name on a {@code LoggerConfig}, so a collision would silently replace one attached
+     * appender with another instead of failing loudly. A monotonically increasing counter cannot
+     * collide within this JVM.
+     */
+    private static final AtomicLong NEXT_ID = new AtomicLong();
+
     private final List<LogEvent> events = new CopyOnWriteArrayList<>();
 
     private Logger attachedLogger;
@@ -46,7 +57,9 @@ public final class TestLogAppender extends AbstractAppender {
     private Level previousLevel;
 
     private TestLogAppender() {
-        super("test-capture-" + System.identityHashCode(new Object()), null, null, false);
+        // The 5-arg constructor (with a Property[]) is used deliberately: the 4-arg overload
+        // this used to call is deprecated in this module's Log4j2 version.
+        super("test-capture-" + NEXT_ID.getAndIncrement(), null, null, false, Property.EMPTY_ARRAY);
     }
 
     /**

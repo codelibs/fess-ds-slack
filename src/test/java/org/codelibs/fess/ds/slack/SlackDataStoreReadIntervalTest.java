@@ -39,11 +39,15 @@ import org.junit.jupiter.api.TestInfo;
  * pattern once per processed message and once per processed file.
  *
  * <p>
- * {@link SlackDataStore#getReadInterval} overrides the inherited method rather than relying on
- * it directly: {@code AbstractDataStore.getReadInterval} reads the hardcoded key {@code
- * "readInterval"} (camelCase), which does not match this plugin's own snake_case convention
- * (token, include_private, connection_timeout, exclude_archived, ...) or the {@code
- * read_interval} name documented for this parameter.
+ * This plugin relies on the inherited {@code AbstractDataStore.getReadInterval} directly --
+ * {@link SlackDataStore} does not override it. That method reads the hardcoded key {@code
+ * "readInterval"} (camelCase), but this plugin's own parameter is documented and configured as
+ * snake_case {@code read_interval}; the two still resolve to the same value because {@link
+ * org.codelibs.fess.entity.DataStoreParams} wraps its backing map in {@link
+ * org.codelibs.fess.entity.ParamMap}, whose {@code get} retries the other case convention on a
+ * miss. So a snake_case {@code read_interval} in the crawl configuration is found by a
+ * camelCase {@code "readInterval"} lookup with no override needed here -- an earlier override
+ * added on the opposite (and false) premise was removed once this was confirmed.
  * </p>
  */
 public class SlackDataStoreReadIntervalTest extends UnitDsTestCase {

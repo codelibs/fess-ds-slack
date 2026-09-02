@@ -162,6 +162,35 @@ public class SlackClient implements Closeable {
             "not_authed", "token_expired", "not_allowed_token_type");
 
     /**
+     * Slack error codes that are transient/server-side rather than a property of the specific
+     * channel or page being fetched, so {@link #handleApiError} fails the crawl for these the
+     * same way it does for {@link #FATAL_ERROR_CODES}, instead of warning and skipping as it
+     * does for a channel-scoped code such as {@code channel_not_found}.
+     *
+     * <p>
+     * {@code ratelimited} is Slack's 429 body ({@code {"ok":false,"error":"ratelimited"}});
+     * {@code internal_error}, {@code service_unavailable}, and {@code request_timeout} are
+     * documented 5xx-shaped failures; {@code fatal_error} is documented as also arising from an
+     * over-large page size on a 200 (see {@link org.codelibs.fess.ds.slack.api.Request#isRetryableStatus}),
+     * which is why it belongs here and not in {@link #FATAL_ERROR_CODES}: it is not a statement
+     * about the token. None of these five says anything about whether the specific channel or
+     * page being walked exists or is accessible -- unlike {@code channel_not_found} or {@code
+     * not_in_channel} -- so skipping just that one channel/page would under-index silently
+     * instead of surfacing a condition that likely affects every other call just as much.
+     * </p>
+     */
+    protected static final Set<String> TRANSIENT_ERROR_CODES =
+            Set.of("ratelimited", "internal_error", "fatal_error", "service_unavailable", "request_timeout");
+
+    /**
+     * Synthetic error code used in a {@link SlackApiException} raised because
+     * {@link Response#retriesExhausted()} was set but the exhausted response carried no {@code
+     * error} of its own -- for example a 5xx with an unparseable or empty body. Never returned by
+     * Slack itself.
+     */
+    protected static final String RETRIES_EXHAUSTED_ERROR_CODE = "retries_exhausted";
+
+    /**
      * The one Slack error code that is an expected, non-error outcome rather than a failure:
      * {@code channel_join}/{@code channel_leave} messages cannot be threaded, so calling
      * conversations.replies on their {@code ts} always returns this. {@link #handleApiError}
@@ -192,6 +221,15 @@ public class SlackClient implements Closeable {
      * UI (which flips {@link org.codelibs.fess.ds.AbstractDataStore#alive} to {@code false})
      * takes effect at the next page boundary instead of only after every page of every channel
      * has been walked.
+     *
+     * <p>
+     * <b>Not consulted while a request is retrying</b>: {@link org.codelibs.fess.ds.slack.api.Request#sleepBeforeRetry}
+     * has no reference to this supplier, so a stop landing mid-backoff is delayed until that
+     * retry sequence finishes -- bounded by {@code max_retry_count} times {@code
+     * Request.MAX_RETRY_WAIT_MILLIS} -- not until the next page boundary. See that method's
+     * javadoc for why this is a documented bound rather than plumbing this supplier down into
+     * {@code Request}.
+     * </p>
      */
     protected final BooleanSupplier aliveSupplier;
 
@@ -403,12 +441,25 @@ public class SlackClient implements Closeable {
         return new UsersInfoRequest(requestContext, user);
     }
 
+    /**
+     * Releases this client's in-memory state.
+     *
+     * <p>
+     * That is: the three lookup caches ({@link #usersCache}, {@link #botsCache}, {@link
+     * #channelsCache}) and {@link #preloadedChannels}, the channel listing captured by the
+     * constructor's {@code conversations.list} preload. There is nothing else here to release --
+     * {@link #requestContext} holds only plain configuration values (token, timeouts, retry
+     * policy, proxy), not an open connection or a resource of its own, and every Slack API call
+     * this class makes opens and closes its own {@link org.codelibs.curl.CurlResponse} at the
+     * call site rather than holding one open on this client.
+     * </p>
+     */
     @Override
     public void close() {
-        // TODO
         usersCache.invalidateAll();
         botsCache.invalidateAll();
         channelsCache.invalidateAll();
+        preloadedChannels.clear();
     }
 
     /**
@@ -621,12 +672,22 @@ public class SlackClient implements Closeable {
      * code mean" decision lives in one place instead of five copies of the same switch.
      *
      * <p>
-     * Three outcomes, in order:
+     * Four outcomes, in order:
      * </p>
      * <ul>
      * <li>A code in {@link #FATAL_ERROR_CODES} (the token can no longer authenticate) throws
      * {@link SlackApiException}, so the caller's paging loop aborts and the crawl is reported as
      * failed instead of a false "success".</li>
+     * <li>A code in {@link #TRANSIENT_ERROR_CODES}, or a response whose
+     * {@link Response#retriesExhausted()} is set regardless of its error code, also throws
+     * {@link SlackApiException}. Both are treated as fatal for the same reason: neither is a
+     * property of the specific channel or page being fetched, so skipping just that one
+     * channel/page -- the treatment channel-scoped codes get below -- would silently under-index
+     * instead of surfacing a condition that almost certainly affects every other call just as
+     * much. This is what closes the defect this phase exists to eliminate: a rate limit or a
+     * server error that survives every retry used to reach this method as an ordinary {@code
+     * ok:false} body with no rule of its own, fall into the catch-all below, and be warned and
+     * skipped -- silently truncating the channel walk while the job still reported success.</li>
      * <li>{@link #THREAD_NOT_FOUND_ERROR_CODE} is logged at debug only: it is the expected
      * outcome of calling conversations.replies on a {@code channel_join}/{@code channel_leave}
      * message's {@code ts}, not a failure, and warning on it would spam every crawl.</li>
@@ -643,12 +704,18 @@ public class SlackClient implements Closeable {
      * @param method the Slack Web API method name, e.g. {@code "conversations.history"}, used
      *            only for logging and the {@link SlackApiException} message
      * @param response the failed response
-     * @throws SlackApiException if the error code is one of {@link #FATAL_ERROR_CODES}
+     * @throws SlackApiException if the error code is one of {@link #FATAL_ERROR_CODES} or
+     *             {@link #TRANSIENT_ERROR_CODES}, or if {@link Response#retriesExhausted()} is set
      */
     protected void handleApiError(final String method, final Response response) {
         final String errorCode = response.getError();
         if (errorCode != null && FATAL_ERROR_CODES.contains(errorCode)) {
             throw new SlackApiException(method, errorCode);
+        }
+        if (response.retriesExhausted() || (errorCode != null && TRANSIENT_ERROR_CODES.contains(errorCode))) {
+            logger.warn("Slack API \"{}\" failed with a transient error after {}: {}", method,
+                    response.retriesExhausted() ? "exhausting its retries" : "no retry (arrived on HTTP 200)", errorCode);
+            throw new SlackApiException(method, errorCode != null ? errorCode : RETRIES_EXHAUSTED_ERROR_CODE);
         }
         if (THREAD_NOT_FOUND_ERROR_CODE.equals(errorCode)) {
             if (logger.isDebugEnabled()) {
@@ -951,14 +1018,16 @@ public class SlackClient implements Closeable {
             final List<Message> messages = response.getMessages();
             for (int i = 1; i < messages.size(); i++) {
                 final Message message = messages.get(i);
-                // Slack documents thread_broadcast as a message subtype, not as a boolean
-                // field: Message#isThreadBroadcast() is always false because the backing
-                // field is protected with no setter and Jackson's default field visibility
-                // is PUBLIC_ONLY, so none of the plausible payload shapes ever populate it.
-                // Without this guard actually firing, a broadcast reply is fetched here a
-                // second time -- once via conversations.history, once via this walk -- and
-                // only avoids being duplicated because both resolve the same permalink and
-                // the second store overwrites the first.
+                // Slack documents thread_broadcast as a message subtype, checked here via
+                // Message#getSubtype() -- not as a boolean field. An earlier revision of this
+                // class relied on a since-deleted Message#isThreadBroadcast() that was always
+                // false (the backing field was protected with no setter, and Jackson's default
+                // field visibility is PUBLIC_ONLY, so no plausible payload shape ever populated
+                // it); this subtype check is what replaced it. Without this guard actually
+                // firing, a broadcast reply is fetched here a second time -- once via
+                // conversations.history, once via this walk -- and only avoids being duplicated
+                // because both resolve the same permalink and the second store overwrites the
+                // first.
                 if ("thread_broadcast".equals(message.getSubtype())) {
                     continue;
                 }

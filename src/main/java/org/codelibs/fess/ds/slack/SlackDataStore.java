@@ -90,6 +90,48 @@ import com.google.common.util.concurrent.UncheckedExecutionException;
  * <li>file_crawl: Whether to crawl file attachments</li>
  * <li>number_of_threads: Thread pool size for parallel processing</li>
  * </ul>
+ *
+ * <h2>What happens when a Slack API call fails</h2>
+ * <p>
+ * Four mechanisms cooperate, each documented in full where it lives; this is only the map of how
+ * they hand off to each other, since no single one of their javadocs states the whole path:
+ * </p>
+ * <ol>
+ * <li><b>Retry-on-status</b> ({@code org.codelibs.fess.ds.slack.api.Request#execute}): a 429 or
+ * 5xx HTTP status is retried up to {@code max_retry_count} times, honouring a {@code Retry-After}
+ * header when present. If every attempt still lands on a retryable status, the last attempt's
+ * body is parsed and returned like any other response, but flagged via
+ * {@link org.codelibs.fess.ds.slack.api.Response#retriesExhausted()} -- see that method's
+ * javadoc for why this layer does not decide fatal-vs-skip itself.</li>
+ * <li><b>Body classification</b> ({@link SlackClient#handleApiError}): every paginated call
+ * (files.list, conversations.list, conversations.history, conversations.replies, users.list)
+ * routes its {@code ok:false} body here. A code in {@link SlackClient#FATAL_ERROR_CODES} (the
+ * token itself cannot authenticate) or {@link SlackClient#TRANSIENT_ERROR_CODES} (a transient
+ * server-side condition, not a property of the specific channel/page), or a response with
+ * {@code retriesExhausted()} set regardless of its code, throws {@link
+ * org.codelibs.fess.ds.slack.api.SlackApiException}. Everything else is warned and skipped for
+ * just that channel/page.</li>
+ * <li><b>Propagation or worker latching</b>: a {@link org.codelibs.fess.ds.slack.api.SlackApiException}
+ * thrown on {@link #storeData}'s own thread (files.list, conversations.list,
+ * conversations.history, users.list, and the constructor's preload of both listing calls)
+ * propagates directly out of {@link #storeData}. One raised on a worker thread dispatched by
+ * {@link #processChannelMessages}/{@link #processChannelFiles} (conversations.replies via {@link
+ * #processMessageReplies}) cannot reach the submitting thread that way -- {@link
+ * java.util.concurrent.ThreadPoolExecutor} swallows an uncaught exception from its {@code
+ * Runnable} -- so it is caught there and handed to {@link #latchFatalError} instead, which
+ * records it and stops the crawl (next mechanism) rather than letting it vanish.</li>
+ * <li><b>Two flags for stopping</b>: an operator's admin-UI "stop" flips the inherited {@code
+ * alive} flag, which Fess assigns {@code true} once at field initialisation and never resets;
+ * {@link #latchFatalError} and an aborting {@link #resolveFailureUrl} instead clear this crawl's
+ * own {@link #CRAWL_ALIVE} flag, deliberately <em>not</em> {@code alive}, because a data store is
+ * a LastaDi singleton reused by every later crawl (see {@link #latchFatalError}). Both are
+ * honoured together: every paging loop in {@link SlackClient} consults a supplier over the pair,
+ * and {@link #storeData}'s own channel-dispatch loop checks both before dispatching the next
+ * channel. {@link #storeData} tolerates both landing at once: an admin-UI stop with no latched
+ * error logs that the crawl was cut short; a latched error takes precedence and is (re)thrown
+ * once the executor has drained, which is the more actionable of the two for an operator to
+ * see.</li>
+ * </ol>
  */
 public class SlackDataStore extends AbstractDataStore {
 
@@ -104,6 +146,15 @@ public class SlackDataStore extends AbstractDataStore {
 
     /** Default maximum file size for processing (10MB). */
     protected static final long DEFAULT_MAX_FILESIZE = 10000000L; // 10m
+
+    /**
+     * Default value of {@link #MAX_CONTENT_LENGTH}: defer to {@link
+     * org.codelibs.fess.crawler.helper.ContentLengthHelper}'s per-MIME-type limit, the same
+     * fallback {@code ExtractorBuilder#extract()} already applies on its own {@code
+     * maxContentLength} field when nothing overrides it. This mirrors {@code
+     * OneDriveDataStore}'s {@code DEFAULT_MAX_SIZE} convention (fess-ds-microsoft365).
+     */
+    protected static final long DEFAULT_MAX_CONTENT_LENGTH = -1L;
 
     // parameters
     /** Parameter name for ignoring errors during crawling. */
@@ -129,8 +180,53 @@ public class SlackDataStore extends AbstractDataStore {
     protected static final String CRAWL_ALIVE = "crawl_alive";
     /** Parameter name for thread pool size. */
     protected static final String NUMBER_OF_THREADS = "number_of_threads";
-    /** Parameter name for maximum file size. */
+    /**
+     * Parameter name for the maximum file size, in bytes, this data store will download.
+     *
+     * <p>
+     * This is a <b>transfer bound</b>: {@link #processFile} checks it against {@code
+     * file.getSize()} -- the size Slack's API reports in file metadata -- <i>before</i>
+     * downloading anything, and skips the download entirely (throwing {@code
+     * MaxLengthExceededException}) when the file is too big. It says nothing about how much of
+     * what gets downloaded is then allowed to weigh; see {@link #MAX_CONTENT_LENGTH} for that
+     * bound. The two differ in <i>what</i> they measure rather than in kind: this one trusts the
+     * size Slack reports, its sibling measures the bytes actually received, so a file whose
+     * metadata understates it is still caught -- but neither bounds extracted text, and a
+     * generous {@code max_content_length} does not widen what this parameter lets through the
+     * network call in the first place.
+     * </p>
+     */
     protected static final String MAX_FILESIZE = "max_filesize";
+    /**
+     * Parameter name for the maximum size, in bytes, a downloaded file may have before this
+     * data store refuses to extract text from it.
+     *
+     * <p>
+     * A <b>post-download size bound</b>, not a truncation limit. It is passed to {@code
+     * ExtractorBuilder#maxContentLength(long)}, which compares it against the byte count of the
+     * downloaded stream and throws {@code MaxLengthExceededException} when the file is larger --
+     * <i>before</i> handing anything to Tika. Nothing truncates: an over-size file is skipped
+     * whole, and the value never reaches the extractor. {@code OneDriveDataStore}
+     * (fess-ds-microsoft365) uses the same parameter the same way, as its file-size bound.
+     * </p>
+     *
+     * <p>
+     * It therefore overlaps {@link #MAX_FILESIZE} rather than complementing it. What it adds is
+     * a check on the bytes actually received, after the transfer, where {@code max_filesize}
+     * trusts the size Slack's metadata reports before the transfer.
+     * </p>
+     *
+     * <p>
+     * Unset (or a negative value) means {@link #DEFAULT_MAX_CONTENT_LENGTH}: defer to {@code
+     * ContentLengthHelper}'s per-MIME-type limit. That fallback is not new behavior this
+     * parameter turns on -- {@code ExtractorBuilder#extract()} already runs it internally
+     * whenever nothing else set a non-negative {@code maxContentLength}, which was already true
+     * of every call this data store made before this parameter existed. What this parameter adds
+     * is the ability for an operator to override that per-MIME default with an explicit,
+     * possibly stricter, limit; leaving it unset changes nothing about current behavior.
+     * </p>
+     */
+    protected static final String MAX_CONTENT_LENGTH = "max_content_length";
     /** Parameter name for enabling file crawling. */
     protected static final String FILE_CRAWL = "file_crawl";
     /** Regular expression pattern that matches any MIME type; the default of {@link #SUPPORTED_MIMETYPES}. */
@@ -235,6 +331,7 @@ public class SlackDataStore extends AbstractDataStore {
             final Map<String, String> scriptMap, final Map<String, Object> defaultDataMap) {
         final Map<String, Object> configMap = new HashMap<>();
         configMap.put(MAX_FILESIZE, getMaxFilesize(paramMap));
+        configMap.put(MAX_CONTENT_LENGTH, getMaxContentLength(paramMap));
         configMap.put(IGNORE_ERROR, isIgnoreError(paramMap));
         configMap.put(SUPPORTED_MIMETYPES, getSupportedMimeTypes(paramMap));
         configMap.put(FILE_CRAWL, isFileCrawl(paramMap));
@@ -314,6 +411,18 @@ public class SlackDataStore extends AbstractDataStore {
                 }
             }
         } catch (final InterruptedException e) {
+            // Restore the interrupt flag before propagating, matching Request.sleepBeforeRetry's
+            // handling of the same situation: swallowing it here would leave later code on this
+            // thread with no way to observe that an interrupt occurred at all.
+            Thread.currentThread().interrupt();
+            // A fatal error latched by a worker (see latchFatalError) is more actionable than an
+            // interrupt racing it on the main thread -- prefer surfacing that over discarding it
+            // in favor of InterruptedRuntimeException, matching the same preference storeData
+            // applies below via fatalError.get() once the executor shuts down cleanly.
+            final SlackApiException fatalOnInterrupt = fatalError.get();
+            if (fatalOnInterrupt != null) {
+                throw fatalOnInterrupt;
+            }
             throw new InterruptedRuntimeException(e);
         } finally {
             executorService.shutdownNow();
@@ -340,18 +449,64 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Parses a long configuration parameter, falling back to a default with a warning instead of
+     * silently reverting when the value is not a number.
+     *
+     * <p>
+     * Shared by {@link #getMaxFilesize} and {@link #getMaxContentLength}, matching the
+     * "non-numeric falls back to the default, with a warning" contract {@code
+     * SlackClient#getIntParam} already established for this module's other numeric parameters --
+     * before this, these two silently reverted a typo'd value with no warning at all, while
+     * {@link #getExecutorTimeout} and every parameter this phase added does warn.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @param paramName the parameter name to read
+     * @param defaultValue the value to fall back to
+     * @return the parsed value, or {@code defaultValue} if unset or not a number
+     */
+    protected long getLongParam(final DataStoreParams paramMap, final String paramName, final long defaultValue) {
+        final String value = paramMap.getAsString(paramName);
+        try {
+            return StringUtil.isNotBlank(value) ? Long.parseLong(value) : defaultValue;
+        } catch (final NumberFormatException e) {
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", paramName, value, defaultValue);
+            return defaultValue;
+        }
+    }
+
+    /**
      * Extracts the maximum file size configuration from parameters.
+     *
+     * <p>
+     * A blank or non-numeric value falls back to {@link #DEFAULT_MAX_FILESIZE} with a warning
+     * rather than failing the crawl or silently reverting.
+     * </p>
      *
      * @param paramMap the configuration parameters
      * @return the maximum file size in bytes
      */
     protected long getMaxFilesize(final DataStoreParams paramMap) {
-        final String value = paramMap.getAsString(MAX_FILESIZE);
-        try {
-            return StringUtil.isNotBlank(value) ? Long.parseLong(value) : DEFAULT_MAX_FILESIZE;
-        } catch (final NumberFormatException e) {
-            return DEFAULT_MAX_FILESIZE;
-        }
+        return getLongParam(paramMap, MAX_FILESIZE, DEFAULT_MAX_FILESIZE);
+    }
+
+    /**
+     * Extracts the maximum content length configuration -- the post-download size bound applied
+     * by {@code ExtractorBuilder} -- from parameters. See {@link #MAX_CONTENT_LENGTH} for how
+     * this relates to {@link #getMaxFilesize}, the pre-download transfer bound.
+     *
+     * <p>
+     * A blank or non-numeric value falls back to {@link #DEFAULT_MAX_CONTENT_LENGTH} ({@code
+     * -1}), same as an unset parameter: both mean "defer to {@code ContentLengthHelper}". A
+     * non-numeric value also now warns, matching {@link #getMaxFilesize}.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the maximum content length in bytes, or a negative value to defer to {@code
+     *         ContentLengthHelper}'s per-MIME-type limit
+     */
+    protected long getMaxContentLength(final DataStoreParams paramMap) {
+        return getLongParam(paramMap, MAX_CONTENT_LENGTH, DEFAULT_MAX_CONTENT_LENGTH);
     }
 
     /**
@@ -360,7 +515,11 @@ public class SlackDataStore extends AbstractDataStore {
      *
      * <p>
      * A non-numeric value falls back to {@link #DEFAULT_EXECUTOR_TIMEOUT} with a warning rather
-     * than failing the crawl.
+     * than failing the crawl. A numeric but negative value is just as unusable -- {@code
+     * awaitTermination(negative, SECONDS)} returns immediately without waiting at all, discarding
+     * the entire backlog with nothing but a single warning -- so it also falls back to the
+     * default, with its own warning, matching the clamp {@code connection_timeout}, {@code
+     * read_timeout}, and {@code retry_interval} already get in {@code SlackClient}.
      * </p>
      *
      * @param paramMap the configuration parameters
@@ -368,12 +527,18 @@ public class SlackDataStore extends AbstractDataStore {
      */
     protected int getExecutorTimeout(final DataStoreParams paramMap) {
         final String value = paramMap.getAsString(EXECUTOR_TIMEOUT);
+        final int parsed;
         try {
-            return StringUtil.isNotBlank(value) ? Integer.parseInt(value) : DEFAULT_EXECUTOR_TIMEOUT;
+            parsed = StringUtil.isNotBlank(value) ? Integer.parseInt(value) : DEFAULT_EXECUTOR_TIMEOUT;
         } catch (final NumberFormatException e) {
             logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", EXECUTOR_TIMEOUT, value, DEFAULT_EXECUTOR_TIMEOUT);
             return DEFAULT_EXECUTOR_TIMEOUT;
         }
+        if (parsed < 0) {
+            logger.warn("Parameter '{}' must not be negative: {}. Falling back to {}.", EXECUTOR_TIMEOUT, parsed, DEFAULT_EXECUTOR_TIMEOUT);
+            return DEFAULT_EXECUTOR_TIMEOUT;
+        }
+        return parsed;
     }
 
     /**
@@ -547,7 +712,7 @@ public class SlackDataStore extends AbstractDataStore {
                                 message);
                     }
                 } catch (final SlackApiException e) {
-                    latchFatalError(executorService, fatalError, e);
+                    latchFatalError(executorService, fatalError, (AtomicBoolean) configMap.get(CRAWL_ALIVE), e);
                 }
             });
             if (readInterval > 0) {
@@ -570,8 +735,8 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
-     * Records the first fatal Slack API error seen by any worker thread and shuts the executor
-     * down immediately.
+     * Records the first fatal Slack API error seen by any worker thread, shuts the executor down
+     * immediately, and stops this data store.
      *
      * <p>
      * Chosen over letting the backlog drain naturally: once the token itself is no longer valid,
@@ -586,16 +751,56 @@ public class SlackDataStore extends AbstractDataStore {
      * {@link RejectedExecutionException} is not what provides that safety.
      * </p>
      *
+     * <p>
+     * <b>Clearing this crawl's stop flag closes the gap {@code shutdownNow()} alone left
+     * open.</b> A
+     * fatal error is discovered on a worker thread -- {@code conversations.replies}, dispatched
+     * from {@link #processChannelMessages} -- but {@code client.getChannels}/{@code
+     * getChannelMessages}/{@code getChannelFiles} keep walking and dispatching on the *main*
+     * thread regardless, one page and one {@code read_interval} sleep at a time, until every
+     * remaining channel and message has been silently discarded by the shut-down executor before
+     * {@link #storeData} finally reports the failure. {@code invalid_auth} and the rest of
+     * {@link SlackClient#FATAL_ERROR_CODES} self-correct within roughly a page, because the very
+     * next main-thread call fails the same way and throws directly. {@code missing_scope} does
+     * not self-correct: it is scoped per Slack Web API *method*, so a token missing only the
+     * scope conversations.replies needs keeps succeeding on every main-thread
+     * conversations.history call indefinitely while only the reply-fetching worker latches.
+     * Clearing {@code crawlAlive} stops that walk: {@link #storeData}'s channel-dispatch loop
+     * already checks it before dispatching the *next* channel, alongside the operator's admin-UI
+     * stop, so the two compose. {@link #storeData}'s own post-walk check tolerates the crawl
+     * having been stopped at the same time as a latched {@code fatalError} -- it skips the
+     * "stopped early" info log and lets the more actionable exception take over -- because that
+     * is precisely the state this method produces.
+     * </p>
+     *
+     * <p>
+     * Deliberately <em>not</em> {@link #stop()}. That flips the inherited
+     * {@link org.codelibs.fess.ds.AbstractDataStore#alive} flag, which Fess assigns {@code true}
+     * exactly once, at field initialisation, and never resets. A data store is a LastaDi
+     * singleton reused by every crawl for the lifetime of the JVM, so latching a fatal error
+     * that way would leave every subsequent crawl of every Slack {@code DataConfig} walking zero
+     * channels, indexing nothing, and still reporting success -- until Fess is restarted. One
+     * rate-limited {@code conversations.replies} that exhausts its retries is enough to trigger
+     * it. The already-indexed documents survive -- {@code AbstractDataStore} stamps {@code
+     * expires} on every one of them whenever {@code day.for.cleanup} is non-negative (it
+     * defaults to 3), and {@code DataIndexHelper.deleteOldDocs} excludes documents that carry it
+     * -- so the failure mode is a silently stale index rather than a deleted one, reported to
+     * the operator as a successful crawl.
+     * </p>
+     *
      * @param executorService the executor to shut down
      * @param fatalError the latch shared with {@link #storeData}; only the first error is kept, since a
      *            second worker hitting this almost certainly means the same fatal condition, not
      *            new information
+     * @param crawlAlive this crawl's stop flag, cleared so the main-thread channel walk stops
+     *            dispatching
      * @param e the fatal error just caught
      */
     protected void latchFatalError(final ExecutorService executorService, final AtomicReference<SlackApiException> fatalError,
-            final SlackApiException e) {
+            final AtomicBoolean crawlAlive, final SlackApiException e) {
         if (fatalError.compareAndSet(null, e)) {
             executorService.shutdownNow();
+            crawlAlive.set(false);
         }
     }
 
@@ -661,7 +866,7 @@ public class SlackDataStore extends AbstractDataStore {
                 try {
                     processFile(dataConfig, callback, configMap, paramMap, scriptMap, defaultDataMap, client, team, channel, file);
                 } catch (final SlackApiException e) {
-                    latchFatalError(executorService, fatalError, e);
+                    latchFatalError(executorService, fatalError, (AtomicBoolean) configMap.get(CRAWL_ALIVE), e);
                 }
             });
             if (readInterval > 0) {
@@ -873,6 +1078,18 @@ public class SlackDataStore extends AbstractDataStore {
             failureUrlService.store(dataConfig, errorName, resolveFailureUrl(target, url, (AtomicBoolean) configMap.get(CRAWL_ALIVE)),
                     target);
             crawlerStatsHelper.record(statsKey, StatsAction.ACCESS_EXCEPTION);
+        } catch (final SlackApiException e) {
+            // Must propagate uncaught, not fall into the generic catch below: the worker task
+            // dispatching this call (see processChannelMessages/processChannelFiles) wraps it in
+            // its own catch (SlackApiException) that forwards to latchFatalError, so storeData
+            // fails the whole crawl instead of reporting a false success. Catching it here as a
+            // plain Throwable would instead record it via FailureUrlService as an ordinary
+            // per-item failure and let the crawl continue -- silently restoring the exact defect
+            // this phase closed. Currently unreachable in practice (nothing this method calls
+            // routes through SlackClient#handleApiError yet -- see the six methods deliberately
+            // left out of that table), but the obvious next step for that table is exactly the
+            // change this guards against, so this is defensive on purpose, not dead code to prune.
+            throw e;
         } catch (final Throwable t) {
             logger.warn("Crawling Access Exception at : {}", dataMap, t);
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
@@ -940,7 +1157,8 @@ public class SlackDataStore extends AbstractDataStore {
                 return;
             }
 
-            final String fileContent = getFileContent(client, file, ignoreError);
+            final long maxContentLength = (Long) configMap.get(MAX_CONTENT_LENGTH);
+            final String fileContent = getFileContent(client, file, maxContentLength, ignoreError);
             fileMap.put(MESSAGE_TITLE, getFileTitle(file));
             fileMap.put(MESSAGE_TEXT, getFileText(file, fileContent));
             // fileMap.put(MESSAGE_TEAM, team.getName());
@@ -999,6 +1217,18 @@ public class SlackDataStore extends AbstractDataStore {
             failureUrlService.store(dataConfig, errorName, resolveFailureUrl(target, url, (AtomicBoolean) configMap.get(CRAWL_ALIVE)),
                     target);
             crawlerStatsHelper.record(statsKey, StatsAction.ACCESS_EXCEPTION);
+        } catch (final SlackApiException e) {
+            // Must propagate uncaught, not fall into the generic catch below: the worker task
+            // dispatching this call (see processChannelMessages/processChannelFiles) wraps it in
+            // its own catch (SlackApiException) that forwards to latchFatalError, so storeData
+            // fails the whole crawl instead of reporting a false success. Catching it here as a
+            // plain Throwable would instead record it via FailureUrlService as an ordinary
+            // per-item failure and let the crawl continue -- silently restoring the exact defect
+            // this phase closed. Currently unreachable in practice (nothing this method calls
+            // routes through SlackClient#handleApiError yet -- see the six methods deliberately
+            // left out of that table), but the obvious next step for that table is exactly the
+            // change this guards against, so this is defensive on purpose, not dead code to prune.
+            throw e;
         } catch (final Throwable t) {
             logger.warn("Crawling Access Exception at : {}", dataMap, t);
             final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
@@ -1213,12 +1443,23 @@ public class SlackDataStore extends AbstractDataStore {
     /**
      * Downloads and extracts content from a Slack file.
      *
+     * <p>
+     * Passes {@code file.getName()} to the extractor as a filename hint -- Tika uses it as an
+     * additional signal when the declared MIME type is ambiguous or wrong -- and {@code
+     * maxContentLength} as the extraction bound. See {@link #MAX_CONTENT_LENGTH} for how that
+     * bound relates to {@link #MAX_FILESIZE}, the separate pre-download transfer bound already
+     * checked in {@link #processFile} before this method is ever called.
+     * </p>
+     *
      * @param client the Slack client for file download
      * @param file the file to extract content from
+     * @param maxContentLength the maximum content length to pass to the extractor; negative
+     *            defers to {@code ContentLengthHelper}'s per-MIME-type limit (see {@link
+     *            #getMaxContentLength})
      * @param ignoreError whether to ignore extraction errors
      * @return the extracted file content or empty string if extraction fails
      */
-    protected String getFileContent(final SlackClient client, final File file, final boolean ignoreError) {
+    protected String getFileContent(final SlackClient client, final File file, final long maxContentLength, final boolean ignoreError) {
         if (file.getPermalink() != null) {
             final String mimeType = file.getMimetype().trim();
             final String fileUrl = file.getUrlPrivateDownload();
@@ -1230,8 +1471,10 @@ public class SlackDataStore extends AbstractDataStore {
                 try (final InputStream in = response.getContentAsStream()) {
                     return ComponentUtil.getExtractorFactory()
                             .builder(in, null)
+                            .filename(file.getName())
                             .mimeType(mimeType)
                             .extractorName(extractorName)
+                            .maxContentLength(maxContentLength)
                             .extract()
                             .getContent();
                 }
