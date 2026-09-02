@@ -76,6 +76,30 @@ public class SlackDataStoreTest extends UnitDsTestCase {
         assertEquals(10000000L, maxFilesize);
     }
 
+    // Test getExecutorTimeout method
+    @Test
+    public void test_getExecutorTimeout_defaultValue() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        final int executorTimeout = dataStore.getExecutorTimeout(paramMap);
+        assertEquals(60, executorTimeout);
+    }
+
+    @Test
+    public void test_getExecutorTimeout_validValue() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("executor_timeout", "5");
+        final int executorTimeout = dataStore.getExecutorTimeout(paramMap);
+        assertEquals(5, executorTimeout);
+    }
+
+    @Test
+    public void test_getExecutorTimeout_invalidValue() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("executor_timeout", "invalid");
+        final int executorTimeout = dataStore.getExecutorTimeout(paramMap);
+        assertEquals(60, executorTimeout);
+    }
+
     // Test isIgnoreError method
     @Test
     public void test_isIgnoreError_defaultValue() {

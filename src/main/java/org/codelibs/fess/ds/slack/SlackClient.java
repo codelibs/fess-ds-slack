@@ -19,6 +19,7 @@ import java.io.Closeable;
 import java.net.Proxy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Consumer;
 
@@ -30,6 +31,8 @@ import org.codelibs.curl.CurlRequest;
 import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.Constants;
 import org.codelibs.fess.ds.slack.api.RequestContext;
+import org.codelibs.fess.ds.slack.api.Response;
+import org.codelibs.fess.ds.slack.api.SlackApiException;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.chat.ChatGetPermalinkRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryRequest;
@@ -133,6 +136,35 @@ public class SlackClient implements Closeable {
     // constructor unconditionally calls setTimeouts/setRetry, so a copy declared on this class
     // would be dead in production and could drift from what RequestContext itself falls back to.
     // See RequestContext.DEFAULT_CONNECTION_TIMEOUT's javadoc.
+
+    /**
+     * Slack error codes that mean the token itself cannot be used, so every later call would
+     * fail the same way. {@link #handleApiError} throws {@link SlackApiException} for these
+     * instead of warning and skipping, so the crawl is reported as failed rather than as a
+     * false "success" with zero or partial documents.
+     *
+     * <p>
+     * {@code not_allowed_token_type} is included even though it is absent from the
+     * authentication-specific list the other five come from: Slack documents it as "the token
+     * type used in this request is not allowed", which is a property of the credential rather
+     * than of the channel or page being fetched, so it recurs identically on every subsequent
+     * call. Left in the warn-and-skip catch-all it produced a crawl that walked zero channels
+     * and still reported success. The rest of the boilerplate error table Slack stamps onto
+     * every method page is deliberately <em>not</em> promoted -- codes such as
+     * {@code invalid_cursor} and {@code access_denied} are request-scoped, and treating them as
+     * fatal would abort crawls that should merely skip.
+     * </p>
+     */
+    protected static final Set<String> FATAL_ERROR_CODES = Set.of("invalid_auth", "token_revoked", "account_inactive", "missing_scope",
+            "not_authed", "token_expired", "not_allowed_token_type");
+
+    /**
+     * The one Slack error code that is an expected, non-error outcome rather than a failure:
+     * {@code channel_join}/{@code channel_leave} messages cannot be threaded, so calling
+     * conversations.replies on their {@code ts} always returns this. {@link #handleApiError}
+     * logs it at debug, not warn, so it does not spam every crawl.
+     */
+    protected static final String THREAD_NOT_FOUND_ERROR_CODE = "thread_not_found";
 
     /** Whether to include private channels in operations. */
     protected final Boolean includePrivate;
@@ -409,33 +441,60 @@ public class SlackClient implements Closeable {
     }
 
     /**
+     * Parses a non-negative integer configuration parameter via {@link #getIntParam}, then falls
+     * back to the default (with its own warning) when the parsed value is negative.
+     *
+     * <p>
+     * Shared by {@link #getConnectionTimeout} and {@link #getReadTimeout}: curl4j treats a
+     * negative timeout as "unset" and reverts to the JDK's blocking-forever default, silently
+     * restoring the stall these two parameters exist to prevent, and it does not throw the way a
+     * negative {@code retry_interval} does when it reaches {@code Thread.sleep}. {@code
+     * max_retry_count} does not go through this: a negative retry count merely degrades to
+     * "never retries", not to an unbounded block, so it stays on the plain {@link #getIntParam}.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @param paramName the parameter name to read
+     * @param defaultValue the value to fall back to
+     * @return the parsed value, or {@code defaultValue} if unset, not a number, or negative
+     */
+    protected int getNonNegativeIntParam(final DataStoreParams paramMap, final String paramName, final int defaultValue) {
+        final int value = getIntParam(paramMap, paramName, defaultValue);
+        if (value < 0) {
+            logger.warn("Parameter '{}' must not be negative: {}. Falling back to {}.", paramName, value, defaultValue);
+            return defaultValue;
+        }
+        return value;
+    }
+
+    /**
      * Extracts the connection timeout from the configuration parameters.
      *
      * <p>
-     * A non-numeric value falls back to {@link RequestContext#DEFAULT_CONNECTION_TIMEOUT} with a
-     * warning rather than failing the crawl.
+     * A non-numeric or negative value falls back to {@link RequestContext#DEFAULT_CONNECTION_TIMEOUT}
+     * with a warning rather than failing the crawl or silently blocking forever.
      * </p>
      *
      * @param paramMap the configuration parameters
      * @return the connection timeout in milliseconds
      */
     protected int getConnectionTimeout(final DataStoreParams paramMap) {
-        return getIntParam(paramMap, CONNECTION_TIMEOUT_PARAM, RequestContext.DEFAULT_CONNECTION_TIMEOUT);
+        return getNonNegativeIntParam(paramMap, CONNECTION_TIMEOUT_PARAM, RequestContext.DEFAULT_CONNECTION_TIMEOUT);
     }
 
     /**
      * Extracts the read timeout from the configuration parameters.
      *
      * <p>
-     * A non-numeric value falls back to {@link RequestContext#DEFAULT_READ_TIMEOUT} with a
-     * warning rather than failing the crawl.
+     * A non-numeric or negative value falls back to {@link RequestContext#DEFAULT_READ_TIMEOUT}
+     * with a warning rather than failing the crawl or silently blocking forever.
      * </p>
      *
      * @param paramMap the configuration parameters
      * @return the read timeout in milliseconds
      */
     protected int getReadTimeout(final DataStoreParams paramMap) {
-        return getIntParam(paramMap, READ_TIMEOUT_PARAM, RequestContext.DEFAULT_READ_TIMEOUT);
+        return getNonNegativeIntParam(paramMap, READ_TIMEOUT_PARAM, RequestContext.DEFAULT_READ_TIMEOUT);
     }
 
     /**
@@ -505,6 +564,55 @@ public class SlackClient implements Closeable {
     }
 
     /**
+     * Classifies a failed ({@code ok: false}) Slack API response and reacts accordingly. Used by
+     * every one of this class's paginated calls (files.list, conversations.list,
+     * conversations.history, conversations.replies, users.list) so the "what does this error
+     * code mean" decision lives in one place instead of five copies of the same switch.
+     *
+     * <p>
+     * Three outcomes, in order:
+     * </p>
+     * <ul>
+     * <li>A code in {@link #FATAL_ERROR_CODES} (the token can no longer authenticate) throws
+     * {@link SlackApiException}, so the caller's paging loop aborts and the crawl is reported as
+     * failed instead of a false "success".</li>
+     * <li>{@link #THREAD_NOT_FOUND_ERROR_CODE} is logged at debug only: it is the expected
+     * outcome of calling conversations.replies on a {@code channel_join}/{@code channel_leave}
+     * message's {@code ts}, not a failure, and warning on it would spam every crawl.</li>
+     * <li>Everything else -- channel-scoped codes such as {@code channel_not_found} and
+     * {@code not_in_channel}, and any code this method does not otherwise recognize -- is
+     * logged at warn (the error code only; the raw body moves to debug) and left for the caller
+     * to skip, typically by returning from the paging loop for just that channel or page.
+     * Slack's error tables differ per method -- {@code not_in_channel} is documented for
+     * conversations.history but not for conversations.replies -- so an unrecognized code is more
+     * likely a gap in that table than a credential problem, and must never be treated as
+     * fatal.</li>
+     * </ul>
+     *
+     * @param method the Slack Web API method name, e.g. {@code "conversations.history"}, used
+     *            only for logging and the {@link SlackApiException} message
+     * @param response the failed response
+     * @throws SlackApiException if the error code is one of {@link #FATAL_ERROR_CODES}
+     */
+    protected void handleApiError(final String method, final Response response) {
+        final String errorCode = response.getError();
+        if (errorCode != null && FATAL_ERROR_CODES.contains(errorCode)) {
+            throw new SlackApiException(method, errorCode);
+        }
+        if (THREAD_NOT_FOUND_ERROR_CODE.equals(errorCode)) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Slack API \"{}\" returned \"{}\" (expected for channel_join/channel_leave messages): {}", method, errorCode,
+                        response.responseBody());
+            }
+            return;
+        }
+        logger.warn("Slack API error on \"{}\": {}", method, errorCode);
+        if (logger.isDebugEnabled()) {
+            logger.debug("Slack API error body for \"{}\": {}", method, response.responseBody());
+        }
+    }
+
+    /**
      * Retrieves information about the current team.
      *
      * <p>
@@ -512,6 +620,16 @@ public class SlackClient implements Closeable {
      * message's permalink via a dedicated {@code chat.getPermalink} call
      * instead of building the URL locally from the team domain, so a
      * failure here is logged rather than left silent.
+     * </p>
+     *
+     * <p>
+     * <b>Deliberate exception to {@link #handleApiError}'s table (Ruling-P2-2):</b> every error
+     * here, including {@code missing_scope}, is warn-and-continue, not routed through
+     * {@link #handleApiError} and never fatal, even though {@code missing_scope} is fatal for
+     * every other call in this class. A {@code null} team only degrades permalink quality --
+     * callers fall back to a {@code chat.getPermalink} call per message, exactly as this method's
+     * warning already tells the operator -- so failing the whole crawl over team.info
+     * specifically would be disproportionate. This is intentional, not an oversight.
      * </p>
      *
      * @return the team information, or {@code null} if the call failed
@@ -647,7 +765,7 @@ public class SlackClient implements Closeable {
         while (true) {
             final FilesListResponse response = filesList().channel(channelId).types(getFileTypes()).count(count).page(page).execute();
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"files.list\": {}", response.responseBody());
+                handleApiError("files.list", response);
                 return;
             }
             response.getFiles().forEach(consumer);
@@ -699,7 +817,7 @@ public class SlackClient implements Closeable {
         ConversationsListResponse response = conversationsList().types(getTypes()).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.list\": {}", response.responseBody());
+                handleApiError("conversations.list", response);
                 return;
             }
             response.getChannels().forEach(consumer);
@@ -732,7 +850,7 @@ public class SlackClient implements Closeable {
         ConversationsHistoryResponse response = conversationsHistory(channelId).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.history\": {}", response.responseBody());
+                handleApiError("conversations.history", response);
                 return;
             }
             response.getMessages().forEach(consumer);
@@ -767,7 +885,7 @@ public class SlackClient implements Closeable {
         ConversationsRepliesResponse response = conversationsReplies(channelId, threadTs).limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"conversations.replies\": {}", response.responseBody());
+                handleApiError("conversations.replies", response);
                 return;
             }
             final List<Message> messages = response.getMessages();
@@ -813,7 +931,7 @@ public class SlackClient implements Closeable {
         UsersListResponse response = usersList().limit(limit).execute();
         while (true) {
             if (!response.ok()) {
-                logger.warn("Slack API error occured on \"users.list\": {}", response.responseBody());
+                handleApiError("users.list", response);
                 return;
             }
             response.getMembers().forEach(consumer);
