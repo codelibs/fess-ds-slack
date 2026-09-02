@@ -1290,12 +1290,66 @@ public class SlackDataStore extends AbstractDataStore {
                     }
                 } catch (final SlackApiException e) {
                     latchFatalError(executorService, fatalError, (AtomicBoolean) configMap.get(CRAWL_ALIVE), e);
+                } catch (final Throwable t) {
+                    recordMessageTaskFailure(dataConfig, channel, message, t);
                 }
             });
             if (readInterval > 0) {
                 sleep(readInterval);
             }
         });
+    }
+
+    /**
+     * Logs and records a failure that reached the end of one message's worker task, so it is
+     * reported rather than discarded by the executor.
+     *
+     * <p>
+     * Nothing else catches it. {@link ThreadPoolExecutor#execute} hands a throwable that escapes
+     * its {@link Runnable} to the thread's default uncaught exception handler, which does not go
+     * through this class's logger, does not fail the crawl, and does not record the document
+     * anywhere -- the affected messages are simply absent from the index while the job reports
+     * success.
+     * </p>
+     *
+     * <p>
+     * The gap this closes is {@link #processMessageReplies}, the one call in that task without a
+     * catch of its own ({@link #processMessage} ends in {@code catch (Throwable)}). Its {@code
+     * conversations.replies} walk runs on this worker thread and raises more than {@link
+     * SlackApiException}: {@link SlackDataStoreException} out of {@code Request#parseResponse}
+     * when the body cannot be parsed -- an intermediary answering with an HTML error page, the
+     * case where silent partial indexing is hardest to notice -- a {@link NullPointerException}
+     * when a reply page claims {@code has_more} but carries no {@code response_metadata} cursor, or
+     * any runtime failure from the HTTP layer.
+     * </p>
+     *
+     * <p>
+     * Deliberately not routed to {@link #latchFatalError}: unlike the {@link SlackApiException}
+     * caught beside it, a failure here says nothing about whether the rest of the crawl can
+     * proceed, and every remaining channel and message would be discarded on the strength of one
+     * bad response body. It is recorded as a per-document failure instead, which is what {@link
+     * #processMessage} and {@link #processFile} already do with an unexpected throwable, and the
+     * crawl continues.
+     * </p>
+     *
+     * <p>
+     * The identifier is the {@code channelId/ts} pair {@link #processMessage} falls back to when a
+     * message has no permalink, not a real URL: a thread has no permalink of its own, and
+     * resolving the parent's through {@link #getMessagePermalink} can issue a {@code
+     * chat.getPermalink} call that fails the same way this handler is reporting on. It matches the
+     * synthetic identifier {@link #recordSkippedChannel} uses for the same reason.
+     * </p>
+     *
+     * @param dataConfig the data configuration the failure is recorded against
+     * @param channel the channel the message belongs to
+     * @param message the message whose task failed
+     * @param t the failure that escaped the task
+     */
+    protected void recordMessageTaskFailure(final DataConfig dataConfig, final Channel channel, final Message message, final Throwable t) {
+        final String url = channel.getId() + "/" + message.getTs();
+        logger.warn("Failed to process a message or its thread replies at: {}", url, t);
+        final FailureUrlService failureUrlService = ComponentUtil.getComponent(FailureUrlService.class);
+        failureUrlService.store(dataConfig, t.getClass().getCanonicalName(), url, t);
     }
 
     /**
