@@ -119,6 +119,54 @@ public class SlackClientThreadRepliesTest extends UnitDsTestCase {
         assertEquals("CUR", server.getRequests("/api/conversations.replies").get(1).get("cursor"));
     }
 
+    /**
+     * A second page that does NOT repeat the thread parent must still yield both of its
+     * replies. Slack's reference for {@code conversations.replies} does not state whether the
+     * parent is returned as {@code messages[0]} of every page or only of the first, so the walk
+     * identifies the parent by its timestamp; skipping index 0 unconditionally -- what this
+     * class did before -- silently drops the first reply of every page after the first, which
+     * is one lost message per page for any thread longer than {@code message_count}.
+     */
+    @Test
+    public void test_pageWithoutRepeatedParentKeepsEveryReply() {
+        server.enqueue("/api/conversations.replies",
+                SlackApiMockServer
+                        .json("{\"ok\":true,\"messages\":[" + "{\"ts\":\"1.000100\",\"thread_ts\":\"1.000100\",\"text\":\"parent\"},"
+                                + "{\"ts\":\"2.000200\",\"thread_ts\":\"1.000100\",\"text\":\"reply1\"}"
+                                + "],\"has_more\":true,\"response_metadata\":{\"next_cursor\":\"CUR\"}}"));
+        server.enqueue("/api/conversations.replies",
+                SlackApiMockServer
+                        .json("{\"ok\":true,\"messages\":[" + "{\"ts\":\"3.000300\",\"thread_ts\":\"1.000100\",\"text\":\"reply2\"},"
+                                + "{\"ts\":\"4.000400\",\"thread_ts\":\"1.000100\",\"text\":\"reply3\"}"
+                                + "],\"has_more\":false,\"response_metadata\":{\"next_cursor\":\"\"}}"));
+
+        final List<Message> replies = new ArrayList<>();
+        newClient().getMessageReplies("C1", "1.000100", 100, replies::add);
+
+        assertEquals(3, replies.size());
+        assertEquals("reply1", replies.get(0).getText());
+        assertEquals("reply2", replies.get(1).getText());
+        assertEquals("reply3", replies.get(2).getText());
+    }
+
+    /**
+     * The parent is skipped wherever it appears, not only at index 0.
+     */
+    @Test
+    public void test_parentIsSkippedByTimestampNotByPosition() {
+        server.enqueue("/api/conversations.replies",
+                SlackApiMockServer
+                        .json("{\"ok\":true,\"messages\":[" + "{\"ts\":\"2.000200\",\"thread_ts\":\"1.000100\",\"text\":\"reply1\"},"
+                                + "{\"ts\":\"1.000100\",\"thread_ts\":\"1.000100\",\"text\":\"parent\"}"
+                                + "],\"has_more\":false,\"response_metadata\":{\"next_cursor\":\"\"}}"));
+
+        final List<Message> replies = new ArrayList<>();
+        newClient().getMessageReplies("C1", "1.000100", 100, replies::add);
+
+        assertEquals(1, replies.size());
+        assertEquals("reply1", replies.get(0).getText());
+    }
+
     private SlackClient newClient() {
         final DataStoreParams paramMap = new DataStoreParams();
         paramMap.put("token", "xoxb-test");
