@@ -34,15 +34,14 @@ import org.junit.jupiter.api.TestInfo;
 
 /**
  * Covers Important-2 from the Phase 2 whole-branch review: {@code processMessage} and {@code
- * processFile} each end in {@code catch (final Throwable t)}, which today is harmless only
- * because nothing inside either currently routes through {@code SlackClient#handleApiError} --
- * the six currently-unchecked methods (users.info, bots.info, conversations.info, files.info,
- * chat.getPermalink) are deliberately left out of that table for this phase. The obvious next
- * step for that taxonomy is exactly the change this phase closed: without an explicit rethrow, a
+ * processFile} each end in {@code catch (final Throwable t)}, and without an explicit rethrow a
  * {@link SlackApiException} raised from inside either method would be caught as a plain {@code
  * Throwable}, recorded via {@code FailureUrlService} as an ordinary per-item failure, and the
  * crawl would continue -- reporting a false success on a token that can no longer authenticate at
- * all.
+ * all. The rethrow was defensive when written, because nothing inside either method routed
+ * through {@code SlackClient#handleApiError} yet; the single-object lookups (users.info,
+ * bots.info, conversations.info, chat.getPermalink) now do, so it guards a live path. See
+ * {@link SlackDataStoreLookupErrorTest} for the lookups reaching it through their real calls.
  *
  * <p>
  * Drives {@code storeData} end to end (through the real worker-thread dispatch in {@code

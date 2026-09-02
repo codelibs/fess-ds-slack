@@ -61,6 +61,12 @@ indexing a partial or empty result as a "success". A failure scoped to one chann
 continues with the next channel. See the `SlackDataStore` class javadoc in the source for the
 full mechanism.
 
+This applies to the single-object lookups too -- resolving a user name, a bot name, a channel by
+name, or a message permalink. A lookup that simply finds nothing (`user_not_found` and the like)
+still falls back as it always has: the author field keeps the raw Slack ID, and with
+`permission_sync=true` the channel fails closed. What no longer passes for "found nothing" is a
+token that stopped working partway through a crawl.
+
 ### Scripts 
 Example :
 ```
