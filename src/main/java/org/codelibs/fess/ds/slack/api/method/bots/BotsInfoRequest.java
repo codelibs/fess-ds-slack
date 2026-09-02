@@ -16,7 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.bots;
 
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Request;
 
 /**
@@ -28,11 +28,11 @@ public class BotsInfoRequest extends Request<BotsInfoResponse> {
     protected String bot;
 
     /**
-     * Creates a new bots.info request with the specified authentication.
+     * Creates a new bots.info request with the specified request context.
      *
-     * @param authenctication the authentication credentials
+     * @param authenctication the request context
      */
-    public BotsInfoRequest(final Authentication authenctication) {
+    public BotsInfoRequest(final RequestContext authenctication) {
         super(authenctication);
     }
 

@@ -178,6 +178,8 @@ public class SlackApiMockServerTest extends UnitDsTestCase {
     @Test
     public void test_strict_answersUnscriptedRequestWithError() {
         server.setStrict(true);
+        // The unscripted response is HTTP 400 -- deliberately outside Request's retryable
+        // range (see SlackApiMockServer#setStrict), so this does not pay a retry backoff.
         final SlackClient client = server.newClient("xoxb-test");
         // team.info was never enqueued for; strict mode must fail loudly instead of
         // quietly returning DEFAULT_RESPONSE_BODY's "ok":true.
@@ -187,11 +189,11 @@ public class SlackApiMockServerTest extends UnitDsTestCase {
     }
 
     @Test
-    public void test_strict_unscriptedRequestReturns503() throws Exception {
+    public void test_strict_unscriptedRequestReturns400() throws Exception {
         server.setStrict(true);
         final HttpURLConnection conn = (HttpURLConnection) URI.create(server.getEndpoint() + "team.info").toURL().openConnection();
         try {
-            assertEquals(503, conn.getResponseCode());
+            assertEquals(400, conn.getResponseCode());
         } finally {
             conn.disconnect();
         }

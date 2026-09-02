@@ -328,10 +328,18 @@ public class SlackApiMockServer implements AutoCloseable {
      * Off by default, so existing tests that rely on the default body for
      * incidental calls, such as {@link SlackClient}'s constructor preload,
      * keep working unchanged. Turn this on in a test that wants every
-     * request scripted explicitly: an unscripted request then gets HTTP 503
+     * request scripted explicitly: an unscripted request then gets HTTP 400
      * with body {@value #UNSCRIPTED_RESPONSE_BODY} instead of a quiet empty
      * success, so a missing or exhausted enqueue fails loudly instead of
      * looking like zero results.
+     * </p>
+     *
+     * <p>
+     * <b>Deliberately 400, not a 5xx or 429:</b> "you forgot to stub this
+     * path" is a test-authoring error, not a transient server condition, so
+     * this must stay outside {@code Request}'s retryable range. A 5xx here
+     * would make every strict-mode test that goes through {@link SlackClient}
+     * pay a real retry backoff for a condition retrying can never fix.
      * </p>
      *
      * @param strict whether unscripted requests should fail loudly
@@ -405,7 +413,7 @@ public class SlackApiMockServer implements AutoCloseable {
             }
         }
         if (response == null) {
-            response = strict ? status(503, UNSCRIPTED_RESPONSE_BODY) : json(DEFAULT_RESPONSE_BODY);
+            response = strict ? status(400, UNSCRIPTED_RESPONSE_BODY) : json(DEFAULT_RESPONSE_BODY);
         }
 
         final byte[] payload = response.body.getBytes(StandardCharsets.UTF_8);

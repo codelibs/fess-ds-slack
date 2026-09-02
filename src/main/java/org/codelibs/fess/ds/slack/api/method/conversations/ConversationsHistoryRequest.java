@@ -16,7 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.conversations;
 
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Request;
 
 /**
@@ -42,11 +42,11 @@ public class ConversationsHistoryRequest extends Request<ConversationsHistoryRes
     /**
      * Constructs a new conversations history request.
      *
-     * @param authentication the authentication credentials for API access
+     * @param requestContext the request context for API access
      * @param channel the channel ID to retrieve history from
      */
-    public ConversationsHistoryRequest(final Authentication authentication, final String channel) {
-        super(authentication);
+    public ConversationsHistoryRequest(final RequestContext requestContext, final String channel) {
+        super(requestContext);
         this.channel = channel;
     }
 

@@ -16,7 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.users;
 
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Request;
 
 /**
@@ -30,13 +30,13 @@ public class UsersInfoRequest extends Request<UsersInfoResponse> {
     protected Boolean includeLocale;
 
     /**
-     * Creates a new users.info request with the specified authentication and user.
+     * Creates a new users.info request with the specified request context and user.
      *
-     * @param authentication the authentication credentials
+     * @param requestContext the request context
      * @param user the user ID to get information for
      */
-    public UsersInfoRequest(final Authentication authentication, final String user) {
-        super(authentication);
+    public UsersInfoRequest(final RequestContext requestContext, final String user) {
+        super(requestContext);
         this.user = user;
     }
 

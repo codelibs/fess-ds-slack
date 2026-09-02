@@ -16,7 +16,7 @@
 package org.codelibs.fess.ds.slack.api.method.conversations;
 
 import org.codelibs.curl.CurlRequest;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.Request;
 
 /**
@@ -49,12 +49,12 @@ public class ConversationsRepliesRequest extends Request<ConversationsRepliesRes
     /**
      * Constructs a new conversations.replies request.
      *
-     * @param authentication the authentication credentials
+     * @param requestContext the request context
      * @param channel the channel ID
      * @param ts the timestamp of the parent message
      */
-    public ConversationsRepliesRequest(final Authentication authentication, final String channel, final String ts) {
-        super(authentication);
+    public ConversationsRepliesRequest(final RequestContext requestContext, final String channel, final String ts) {
+        super(requestContext);
         this.channel = channel;
         this.ts = ts;
     }

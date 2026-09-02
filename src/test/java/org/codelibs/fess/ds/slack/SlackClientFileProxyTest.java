@@ -49,7 +49,7 @@ public class SlackClientFileProxyTest extends UnitDsTestCase {
     }
 
     /**
-     * {@code getFileResponse} must honour {@code authentication.getHttpProxy()}
+     * {@code getFileResponse} must honour {@code requestContext.getHttpProxy()}
      * the same way {@link org.codelibs.fess.ds.slack.api.Request#getCurlRequest}
      * does.
      *
@@ -81,7 +81,7 @@ public class SlackClientFileProxyTest extends UnitDsTestCase {
         fakeProxy.start();
 
         final SlackClient client = server.newClient("xoxb-test");
-        client.authentication.setHttpProxy("127.0.0.1", fakeProxy.getAddress().getPort());
+        client.requestContext.setHttpProxy("127.0.0.1", fakeProxy.getAddress().getPort());
 
         try (CurlResponse response = client.getFileResponse("http://slack-files.invalid/f123")) {
             assertEquals("file-content", response.getContentAsString());

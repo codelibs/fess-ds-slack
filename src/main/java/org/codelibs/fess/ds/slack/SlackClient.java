@@ -29,7 +29,7 @@ import org.codelibs.curl.Curl;
 import org.codelibs.curl.CurlRequest;
 import org.codelibs.curl.CurlResponse;
 import org.codelibs.fess.Constants;
-import org.codelibs.fess.ds.slack.api.Authentication;
+import org.codelibs.fess.ds.slack.api.RequestContext;
 import org.codelibs.fess.ds.slack.api.method.bots.BotsInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.chat.ChatGetPermalinkRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryRequest;
@@ -63,12 +63,12 @@ import com.google.common.util.concurrent.UncheckedExecutionException;
 
 /**
  * Slack Web API client that provides high-level access to Slack data including
- * teams, channels, users, messages, and files. This client manages authentication,
+ * teams, channels, users, messages, and files. This client manages the request context,
  * caching, and rate limiting for efficient access to the Slack API.
  *
  * <p>Key features:</p>
  * <ul>
- * <li>Authentication with OAuth tokens</li>
+ * <li>Request context carrying OAuth tokens and proxy settings</li>
  * <li>Caching of users, bots, and channels for performance</li>
  * <li>Support for both public and private channels</li>
  * <li>Pagination handling for large datasets</li>
@@ -101,6 +101,14 @@ public class SlackClient implements Closeable {
     protected static final String PROXY_HOST_PARAM = "proxy_host";
     /** Parameter name for proxy port configuration. */
     protected static final String PROXY_PORT_PARAM = "proxy_port";
+    /** Parameter name for connection timeout configuration. */
+    protected static final String CONNECTION_TIMEOUT_PARAM = "connection_timeout";
+    /** Parameter name for read timeout configuration. */
+    protected static final String READ_TIMEOUT_PARAM = "read_timeout";
+    /** Parameter name for the maximum number of retries on a 429/5xx response. */
+    protected static final String MAX_RETRY_COUNT_PARAM = "max_retry_count";
+    /** Parameter name for the wait, in milliseconds, before the first retry. */
+    protected static final String RETRY_INTERVAL_PARAM = "retry_interval";
     /** Parameter name for file type filtering. */
     protected static final String FILE_TYPES_PARAM = "file_types";
 
@@ -121,11 +129,15 @@ public class SlackClient implements Closeable {
     protected static final String DEFAULT_FILE_COUNT = "20";
     /** Default cache size for all caches. */
     protected static final String DEFAULT_CACHE_SIZE = "10000";
+    // Connection/read timeout and retry defaults live on RequestContext, not here: SlackClient's
+    // constructor unconditionally calls setTimeouts/setRetry, so a copy declared on this class
+    // would be dead in production and could drift from what RequestContext itself falls back to.
+    // See RequestContext.DEFAULT_CONNECTION_TIMEOUT's javadoc.
 
     /** Whether to include private channels in operations. */
     protected final Boolean includePrivate;
-    /** Authentication credentials for Slack API access. */
-    protected final Authentication authentication;
+    /** Request context for Slack API access. */
+    protected final RequestContext requestContext;
     /** Configuration parameters for the data store. */
     protected DataStoreParams paramMap;
     /** Cache for user information to improve performance. */
@@ -139,7 +151,7 @@ public class SlackClient implements Closeable {
 
     /**
      * Creates a new Slack client with the specified configuration parameters.
-     * Initializes authentication, proxy settings, and caches for improved performance.
+     * Initializes the request context, proxy settings, and caches for improved performance.
      *
      * @param paramMap the configuration parameters including token, proxy settings, and cache sizes
      * @throws SlackDataStoreException if required parameters are missing or invalid
@@ -154,7 +166,7 @@ public class SlackClient implements Closeable {
         this.paramMap = paramMap;
         includePrivate = isIncludePrivate(paramMap);
 
-        authentication = new Authentication(token);
+        requestContext = new RequestContext(token);
 
         final String httpProxyHost = getProxyHost(paramMap);
         final String httpProxyPort = getProxyPort(paramMap);
@@ -163,11 +175,14 @@ public class SlackClient implements Closeable {
                 throw new SlackDataStoreException("parameter " + "'" + PROXY_PORT_PARAM + "' required.");
             }
             try {
-                authentication.setHttpProxy(httpProxyHost, Integer.parseInt(httpProxyPort));
+                requestContext.setHttpProxy(httpProxyHost, Integer.parseInt(httpProxyPort));
             } catch (final NumberFormatException e) {
                 throw new SlackDataStoreException("parameter " + "'" + PROXY_PORT_PARAM + "' invalid.", e);
             }
         }
+
+        requestContext.setTimeouts(getConnectionTimeout(paramMap), getReadTimeout(paramMap));
+        requestContext.setRetry(getMaxRetryCount(paramMap), getRetryInterval(paramMap));
 
         usersCache = CacheBuilder.newBuilder()
                 // Each user is cached under both its ID and its name (see the preload
@@ -219,7 +234,7 @@ public class SlackClient implements Closeable {
      * @return a new BotsInfoRequest instance
      */
     public BotsInfoRequest botsInfo() {
-        return new BotsInfoRequest(authentication);
+        return new BotsInfoRequest(requestContext);
     }
 
     /**
@@ -230,7 +245,7 @@ public class SlackClient implements Closeable {
      * @return a new ChatGetPermalinkRequest instance
      */
     public ChatGetPermalinkRequest chatGetPermalink(final String channel, final String ts) {
-        return new ChatGetPermalinkRequest(authentication, channel, ts);
+        return new ChatGetPermalinkRequest(requestContext, channel, ts);
     }
 
     /**
@@ -239,7 +254,7 @@ public class SlackClient implements Closeable {
      * @return a new ConversationsListRequest instance
      */
     public ConversationsListRequest conversationsList() {
-        return new ConversationsListRequest(authentication);
+        return new ConversationsListRequest(requestContext);
     }
 
     /**
@@ -249,7 +264,7 @@ public class SlackClient implements Closeable {
      * @return a new ConversationsHistoryRequest instance
      */
     public ConversationsHistoryRequest conversationsHistory(final String channel) {
-        return new ConversationsHistoryRequest(authentication, channel);
+        return new ConversationsHistoryRequest(requestContext, channel);
     }
 
     /**
@@ -259,7 +274,7 @@ public class SlackClient implements Closeable {
      * @return a new ConversationsInfoRequest instance
      */
     public ConversationsInfoRequest conversationsInfo(final String channel) {
-        return new ConversationsInfoRequest(authentication, channel);
+        return new ConversationsInfoRequest(requestContext, channel);
     }
 
     /**
@@ -270,7 +285,7 @@ public class SlackClient implements Closeable {
      * @return a new ConversationsRepliesRequest instance
      */
     public ConversationsRepliesRequest conversationsReplies(final String channel, final String ts) {
-        return new ConversationsRepliesRequest(authentication, channel, ts);
+        return new ConversationsRepliesRequest(requestContext, channel, ts);
     }
 
     /**
@@ -279,7 +294,7 @@ public class SlackClient implements Closeable {
      * @return a new FilesListRequest instance
      */
     public FilesListRequest filesList() {
-        return new FilesListRequest(authentication);
+        return new FilesListRequest(requestContext);
     }
 
     /**
@@ -289,7 +304,7 @@ public class SlackClient implements Closeable {
      * @return a new FilesInfoRequest instance
      */
     public FilesInfoRequest filesInfo(final String file) {
-        return new FilesInfoRequest(authentication, file);
+        return new FilesInfoRequest(requestContext, file);
     }
 
     /**
@@ -298,7 +313,7 @@ public class SlackClient implements Closeable {
      * @return a new TeamInfoRequest instance
      */
     public TeamInfoRequest teamInfo() {
-        return new TeamInfoRequest(authentication);
+        return new TeamInfoRequest(requestContext);
     }
 
     /**
@@ -307,7 +322,7 @@ public class SlackClient implements Closeable {
      * @return a new UsersListRequest instance
      */
     public UsersListRequest usersList() {
-        return new UsersListRequest(authentication);
+        return new UsersListRequest(requestContext);
     }
 
     /**
@@ -317,7 +332,7 @@ public class SlackClient implements Closeable {
      * @return a new UsersInfoRequest instance
      */
     public UsersInfoRequest usersInfo(final String user) {
-        return new UsersInfoRequest(authentication, user);
+        return new UsersInfoRequest(requestContext, user);
     }
 
     @Override
@@ -366,6 +381,109 @@ public class SlackClient implements Closeable {
      */
     protected String getProxyPort(final DataStoreParams paramMap) {
         return paramMap.getAsString(PROXY_PORT_PARAM, StringUtil.EMPTY);
+    }
+
+    /**
+     * Parses an integer configuration parameter, falling back to a default with a warning
+     * instead of failing the crawl when the value is not a number.
+     *
+     * <p>
+     * Shared by {@link #getConnectionTimeout}, {@link #getReadTimeout}, and
+     * {@link #getMaxRetryCount}: all three follow the same "non-numeric falls back to the
+     * default, with a warning" contract, so the parse/catch/warn logic lives here once.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @param paramName the parameter name to read
+     * @param defaultValue the value to fall back to
+     * @return the parsed value, or {@code defaultValue} if unset or not a number
+     */
+    protected int getIntParam(final DataStoreParams paramMap, final String paramName, final int defaultValue) {
+        final String value = paramMap.getAsString(paramName);
+        try {
+            return StringUtil.isNotBlank(value) ? Integer.parseInt(value) : defaultValue;
+        } catch (final NumberFormatException e) {
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", paramName, value, defaultValue);
+            return defaultValue;
+        }
+    }
+
+    /**
+     * Extracts the connection timeout from the configuration parameters.
+     *
+     * <p>
+     * A non-numeric value falls back to {@link RequestContext#DEFAULT_CONNECTION_TIMEOUT} with a
+     * warning rather than failing the crawl.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the connection timeout in milliseconds
+     */
+    protected int getConnectionTimeout(final DataStoreParams paramMap) {
+        return getIntParam(paramMap, CONNECTION_TIMEOUT_PARAM, RequestContext.DEFAULT_CONNECTION_TIMEOUT);
+    }
+
+    /**
+     * Extracts the read timeout from the configuration parameters.
+     *
+     * <p>
+     * A non-numeric value falls back to {@link RequestContext#DEFAULT_READ_TIMEOUT} with a
+     * warning rather than failing the crawl.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the read timeout in milliseconds
+     */
+    protected int getReadTimeout(final DataStoreParams paramMap) {
+        return getIntParam(paramMap, READ_TIMEOUT_PARAM, RequestContext.DEFAULT_READ_TIMEOUT);
+    }
+
+    /**
+     * Extracts the maximum retry count from the configuration parameters.
+     *
+     * <p>
+     * A non-numeric value falls back to {@link RequestContext#DEFAULT_MAX_RETRY_COUNT} with a
+     * warning rather than failing the crawl.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the maximum number of retries for a retryable (429/5xx) response
+     */
+    protected int getMaxRetryCount(final DataStoreParams paramMap) {
+        return getIntParam(paramMap, MAX_RETRY_COUNT_PARAM, RequestContext.DEFAULT_MAX_RETRY_COUNT);
+    }
+
+    /**
+     * Extracts the retry interval from the configuration parameters.
+     *
+     * <p>
+     * A non-numeric value falls back to {@link RequestContext#DEFAULT_RETRY_INTERVAL} with a
+     * warning rather than failing the crawl. A numeric but negative value is just as unusable --
+     * it would otherwise reach {@code Thread.sleep} and throw {@link IllegalArgumentException},
+     * which is the same "bad config kills the crawl" failure mode -- so it also falls back to the
+     * default, with its own warning.
+     * </p>
+     *
+     * @param paramMap the configuration parameters
+     * @return the wait, in milliseconds, before the first retry when no {@code Retry-After}
+     *         header is present
+     */
+    protected long getRetryInterval(final DataStoreParams paramMap) {
+        final String value = paramMap.getAsString(RETRY_INTERVAL_PARAM);
+        final long parsed;
+        try {
+            parsed = StringUtil.isNotBlank(value) ? Long.parseLong(value) : RequestContext.DEFAULT_RETRY_INTERVAL;
+        } catch (final NumberFormatException e) {
+            logger.warn("Parameter '{}' is not a number: {}. Falling back to {}.", RETRY_INTERVAL_PARAM, value,
+                    RequestContext.DEFAULT_RETRY_INTERVAL);
+            return RequestContext.DEFAULT_RETRY_INTERVAL;
+        }
+        if (parsed < 0) {
+            logger.warn("Parameter '{}' must not be negative: {}. Falling back to {}.", RETRY_INTERVAL_PARAM, parsed,
+                    RequestContext.DEFAULT_RETRY_INTERVAL);
+            return RequestContext.DEFAULT_RETRY_INTERVAL;
+        }
+        return parsed;
     }
 
     /**
@@ -456,11 +574,14 @@ public class SlackClient implements Closeable {
      * Downloads a file from Slack using authenticated HTTP request.
      *
      * <p>
-     * Honours the configured HTTP proxy, matching the API request path in
+     * Honours the configured HTTP proxy and connection/read timeouts,
+     * matching the API request path in
      * {@link org.codelibs.fess.ds.slack.api.Request#getCurlRequest}: without
-     * it, every download attempted a direct connection in a proxied
+     * the proxy, every download attempted a direct connection in a proxied
      * environment and failed, and with {@code ignore_error} defaulting to
-     * true the file was indexed with empty content instead.
+     * true the file was indexed with empty content instead. Without the
+     * timeouts, a file download that stalls mid-transfer would block a
+     * crawler thread indefinitely, same as an unbounded API call.
      * </p>
      *
      * @param fileUrl the URL of the file to download
@@ -468,10 +589,11 @@ public class SlackClient implements Closeable {
      */
     public CurlResponse getFileResponse(final String fileUrl) {
         final CurlRequest request = Curl.get(fileUrl).header("Authorization", "Bearer " + getToken(paramMap));
-        final Proxy httpProxy = authentication.getHttpProxy();
+        final Proxy httpProxy = requestContext.getHttpProxy();
         if (httpProxy != null) {
             request.proxy(httpProxy);
         }
+        request.timeout(requestContext.getConnectionTimeout(), requestContext.getReadTimeout());
         return request.execute();
     }
 
