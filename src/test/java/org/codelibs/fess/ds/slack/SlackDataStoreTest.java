@@ -186,4 +186,15 @@ public class SlackDataStoreTest extends UnitDsTestCase {
         executorService.shutdown();
     }
 
+    /**
+     * An environment where the {@code UrlFilter} component is not registered must not abort
+     * the crawl: {@code storeData} calls this before the client is even constructed.
+     */
+    @Test
+    public void test_getUrlFilter_missingComponentReturnsNull() {
+        final DataStoreParams paramMap = new DataStoreParams();
+        final org.codelibs.fess.crawler.filter.UrlFilter urlFilter = dataStore.getUrlFilter(paramMap);
+        assertNull(urlFilter);
+    }
+
 }

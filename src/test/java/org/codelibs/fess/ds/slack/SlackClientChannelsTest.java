@@ -77,5 +77,29 @@ public class SlackClientChannelsTest extends UnitDsTestCase {
         server.newClient(paramMap).getChannels(channels::add);
 
         assertEquals(0, channels.size());
+        // The load-bearing assertion. An empty result alone does not pin the guard: without it
+        // the blank name reaches conversations.info, whose loader returns null, and the widened
+        // catch above swallows the resulting InvalidCacheLoadException -- leaving the count at
+        // zero for the wrong reason. Only the request count distinguishes "never asked" from
+        // "asked and failed".
+        assertEquals(0, server.getRequestCount("/api/conversations.info"));
+    }
+
+    /** One bad channel name must not abort the whole crawl. */
+    @Test
+    public void test_unknownChannelNameDoesNotAbortCrawl() {
+        server.enqueue("/api/conversations.list", SlackApiMockServer.json(
+                "{\"ok\":true,\"channels\":[{\"id\":\"C1\",\"name\":\"general\"}]," + "\"response_metadata\":{\"next_cursor\":\"\"}}"));
+        server.enqueue("/api/conversations.info", SlackApiMockServer.json("{\"ok\":false,\"error\":\"channel_not_found\"}"));
+
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-test");
+        paramMap.put("channels", "general,nosuchchannel");
+
+        final List<Channel> channels = new ArrayList<>();
+        server.newClient(paramMap).getChannels(channels::add);
+
+        assertEquals(1, channels.size());
+        assertEquals("general", channels.get(0).getName());
     }
 }

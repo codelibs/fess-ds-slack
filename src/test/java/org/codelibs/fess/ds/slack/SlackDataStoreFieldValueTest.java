@@ -84,6 +84,30 @@ public class SlackDataStoreFieldValueTest extends UnitDsTestCase {
         assertNull("no created or timestamp field", dataStore.getFileTimestamp(file));
     }
 
+    /**
+     * getFileContent never returns null -- it returns StringUtil.EMPTY on extraction
+     * failure -- so an empty extraction must not leave a trailing newline after the
+     * file name in the indexed text.
+     */
+    @Test
+    public void test_fileTextWithEmptyContentHasNoTrailingNewline() {
+        final File file = fileNamed("report.pdf");
+        assertEquals("report.pdf", dataStore.getFileText(file, ""));
+    }
+
+    @Test
+    public void test_fileTextJoinsNameAndContent() {
+        final File file = fileNamed("report.pdf");
+        assertEquals("report.pdf\nCONTENT", dataStore.getFileText(file, "CONTENT"));
+    }
+
+    private File fileNamed(final String name) {
+        return new FilesListRequest(null)
+                .parseResponse("{\"ok\":true,\"files\":[{\"id\":\"F1\",\"name\":\"" + name + "\"}]}", FilesListResponse.class)
+                .getFiles()
+                .get(0);
+    }
+
     private Message firstMessage(final String content) {
         final ConversationsHistoryResponse response =
                 new ConversationsHistoryRequest(null, null).parseResponse(content, ConversationsHistoryResponse.class);

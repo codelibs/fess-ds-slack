@@ -59,6 +59,10 @@ import org.codelibs.fess.helper.CrawlerStatsHelper.StatsAction;
 import org.codelibs.fess.helper.CrawlerStatsHelper.StatsKeyObject;
 import org.codelibs.fess.opensearch.config.exentity.DataConfig;
 import org.codelibs.fess.util.ComponentUtil;
+import org.lastaflute.di.core.exception.ComponentNotFoundException;
+
+import com.google.common.cache.CacheLoader.InvalidCacheLoadException;
+import com.google.common.util.concurrent.UncheckedExecutionException;
 
 /**
  * Slack Data Store implementation that enables Fess to crawl and index Slack content
@@ -241,10 +245,16 @@ public class SlackDataStore extends AbstractDataStore {
      * Creates and configures a URL filter based on include/exclude patterns.
      *
      * @param paramMap the configuration parameters
-     * @return the configured URL filter
+     * @return the configured URL filter, or null if the {@link UrlFilter} component is not
+     *         registered
      */
     protected UrlFilter getUrlFilter(final DataStoreParams paramMap) {
-        final UrlFilter urlFilter = ComponentUtil.getComponent(UrlFilter.class);
+        final UrlFilter urlFilter;
+        try {
+            urlFilter = ComponentUtil.getComponent(UrlFilter.class);
+        } catch (final ComponentNotFoundException e) {
+            return null;
+        }
         final String include = paramMap.getAsString(INCLUDE_PATTERN);
         if (StringUtil.isNotBlank(include)) {
             urlFilter.addInclude(include);
@@ -369,7 +379,20 @@ public class SlackDataStore extends AbstractDataStore {
             final SlackClient client, final Team team, final Channel channel, final Message message) {
         final CrawlerStatsHelper crawlerStatsHelper = ComponentUtil.getCrawlerStatsHelper();
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
-        final String url = getMessagePermalink(client, team, channel, message);
+        // getMessagePermalink is resolved outside the main try/catch below because
+        // CrawlerStatsHelper#begin requires StatsKeyObject to already carry a non-null
+        // id; falling through to the main catch (Throwable) with a not-yet-constructed
+        // statsKey would only trade this failure for an IllegalArgumentException out of
+        // CrawlerStatsHelper itself. An unexpected failure here still does not abort the
+        // channel's crawl: it is logged and a channel/timestamp-based identifier is used
+        // in its place.
+        String url;
+        try {
+            url = getMessagePermalink(client, team, channel, message);
+        } catch (final Exception e) {
+            logger.warn("Failed to get a permalink for a message in channel: {}", channel.getId(), e);
+            url = channel.getId() + "/" + message.getTs();
+        }
         final StatsKeyObject statsKey = new StatsKeyObject(url);
         paramMap.put(Constants.CRAWLER_STATS_KEY, statsKey);
         try {
@@ -519,7 +542,7 @@ public class SlackDataStore extends AbstractDataStore {
             final String fileContent = getFileContent(client, file, ignoreError);
             fileMap.put(MESSAGE_TITLE,
                     Stream.of(file.getName(), file.getTitle()).filter(StringUtil::isNotBlank).collect(Collectors.joining(" ")));
-            fileMap.put(MESSAGE_TEXT, file.getName() + "\n" + fileContent);
+            fileMap.put(MESSAGE_TEXT, getFileText(file, fileContent));
             // fileMap.put(MESSAGE_TEAM, team.getName());
             fileMap.put(MESSAGE_TIMESTAMP, getFileTimestamp(file));
             fileMap.put(MESSAGE_USER, getFileUsername(client, file));
@@ -645,9 +668,7 @@ public class SlackDataStore extends AbstractDataStore {
                     return client.getBot(message.getBotId()).getName();
                 }
                 if ("file_comment".equals(message.getSubtype())) {
-                    final User user = client.getUser(message.getComment().getUser());
-                    return !user.getProfile().getDisplayName().isEmpty() ? user.getProfile().getDisplayName()
-                            : user.getProfile().getRealName();
+                    return getUsername(client, message.getComment().getUser());
                 }
             }
         } catch (final Exception e) {
@@ -705,7 +726,7 @@ public class SlackDataStore extends AbstractDataStore {
                     return user.getName();
                 }
             }
-        } catch (final ExecutionException e) {
+        } catch (final ExecutionException | UncheckedExecutionException | InvalidCacheLoadException e) {
             logger.warn("Failed to get username from user: {}", userId, e);
         }
         return userId;
@@ -732,11 +753,15 @@ public class SlackDataStore extends AbstractDataStore {
      * @param team the team information
      * @param channel the channel containing the message
      * @param message the message to get permalink for
-     * @return the permalink URL for the message
+     * @return the permalink URL for the message, or an empty string if the message carries no
+     *         timestamp to build one from
      */
     public String getMessagePermalink(final SlackClient client, final Team team, final Channel channel, final Message message) {
         String permalink = message.getPermalink();
         if (permalink == null) {
+            if (message.getTs() == null) {
+                return StringUtil.EMPTY;
+            }
             if (team == null) {
                 permalink = client.getPermalink(channel.getId(), message.getTs());
             } else {
@@ -745,6 +770,19 @@ public class SlackDataStore extends AbstractDataStore {
             }
         }
         return permalink;
+    }
+
+    /**
+     * Builds the indexed text for a file: its name followed by its extracted content.
+     *
+     * @param file the file being indexed
+     * @param fileContent the file's extracted content; {@link #getFileContent} never returns
+     *            null, only {@link StringUtil#EMPTY} when extraction yields nothing
+     * @return the file name and content joined by a newline, without a trailing newline when
+     *         the content is blank
+     */
+    protected String getFileText(final File file, final String fileContent) {
+        return Stream.of(file.getName(), fileContent).filter(StringUtil::isNotBlank).collect(Collectors.joining("\n"));
     }
 
     /**
