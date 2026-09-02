@@ -15,6 +15,7 @@
  */
 package org.codelibs.fess.ds.slack.api;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
@@ -30,7 +31,20 @@ public abstract class Response {
     public Response() {
     }
 
-    /** Whether the API request was successful. */
+    /**
+     * Whether the API request was successful.
+     *
+     * <p>
+     * {@code @JsonProperty("ok")} is explicit, not incidental: this field's binding currently
+     * survives only because {@link #getOk()} -- a real, {@code get}-prefixed JavaBean getter --
+     * happens to exist beside the bare convenience method {@link #ok()}, which carries neither
+     * an {@code is} nor a {@code get} prefix and so is invisible to Jackson's bean introspector
+     * on its own (see {@link org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesResponse#hasMore}
+     * for what happens when no such sibling exists). The binding must not depend on {@link
+     * #getOk()} continuing to exist, so it is pinned here directly.
+     * </p>
+     */
+    @JsonProperty("ok")
     protected Boolean ok;
     /** Error message if the request failed. */
     protected String error;

@@ -22,6 +22,7 @@ import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.ResponseMetadata;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
@@ -46,7 +47,24 @@ public class ConversationsRepliesResponse extends Response {
     /** Metadata for pagination and response handling */
     protected ResponseMetadata responseMetadata;
 
-    /** Indicates if there are more messages available */
+    /**
+     * Indicates if there are more messages available.
+     *
+     * <p>
+     * {@code @JsonProperty("has_more")} is required, not merely the class-level {@link
+     * JsonNaming} strategy: this field's only accessor, {@link #hasMore()}, carries neither an
+     * {@code is} nor a {@code get} prefix, so Jackson's bean introspector does not recognise it
+     * as a getter at all -- unlike {@link ConversationsHistoryResponse}, which escapes this only
+     * because it also exposes a real {@code getHasMore()} alongside its own {@code hasMore()}
+     * convenience method. Without this annotation this field never deserializes from Slack's
+     * actual {@code has_more} field, {@link #hasMore()} always returns {@code false}, and {@link
+     * org.codelibs.fess.ds.slack.SlackClient#getMessageReplies} silently stops paging after the
+     * first page of every thread with more replies than fit on it. Verified empirically by
+     * round-tripping this class through {@code ObjectMapper} with {@code "has_more":true} in the
+     * payload.
+     * </p>
+     */
+    @JsonProperty("has_more")
     protected Boolean hasMore;
 
     /**

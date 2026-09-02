@@ -22,6 +22,7 @@ import org.codelibs.fess.ds.slack.api.type.Message;
 import org.codelibs.fess.ds.slack.api.type.ResponseMetadata;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
@@ -44,7 +45,21 @@ public class ConversationsHistoryResponse extends Response {
     protected List<Message> messages;
     /** Metadata for pagination including next cursor */
     protected ResponseMetadata responseMetadata;
-    /** Indicates if more messages are available for pagination */
+    /**
+     * Indicates if more messages are available for pagination.
+     *
+     * <p>
+     * {@code @JsonProperty("has_more")} is explicit, not incidental: this field's binding
+     * currently survives only because {@link #getHasMore()} -- a real, {@code get}-prefixed
+     * JavaBean getter -- happens to exist beside the bare convenience method {@link #hasMore()},
+     * which carries neither an {@code is} nor a {@code get} prefix and so is invisible to
+     * Jackson's bean introspector on its own. {@link ConversationsRepliesResponse#hasMore} is
+     * the same field with no such sibling, and was silently never deserialized until it was
+     * annotated the same way this field now is. The binding here must not depend on {@link
+     * #getHasMore()} continuing to exist, so it is pinned here directly.
+     * </p>
+     */
+    @JsonProperty("has_more")
     protected Boolean hasMore;
 
     /**

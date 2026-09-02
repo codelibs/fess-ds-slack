@@ -98,7 +98,7 @@ public class SlackDataStoreFatalLatchStopTest extends UnitDsTestCase {
             protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
                     final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
                     final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client,
-                    final Team team, final Channel channel, final AtomicReference<SlackApiException> fatalError) {
+                    final Team team, final Channel channel, final AtomicReference<SlackApiException> fatalError, final List<String> roles) {
                 processedChannelIds.add(channel.getId());
                 // Simulate a fatal SlackApiException latched by a worker thread while processing
                 // this channel -- e.g. missing_scope discovered by conversations.replies -- which
@@ -192,7 +192,7 @@ public class SlackDataStoreFatalLatchStopTest extends UnitDsTestCase {
         protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
                 final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
                 final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client, final Team team,
-                final Channel channel, final AtomicReference<SlackApiException> fatalError) {
+                final Channel channel, final AtomicReference<SlackApiException> fatalError, final List<String> roles) {
             if (latchOnThisCrawl.get()) {
                 firstCrawl.add(channel.getId());
                 latchFatalError(executorService, fatalError, (AtomicBoolean) configMap.get(CRAWL_ALIVE),

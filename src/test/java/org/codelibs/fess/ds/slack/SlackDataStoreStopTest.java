@@ -92,7 +92,7 @@ public class SlackDataStoreStopTest extends UnitDsTestCase {
             protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
                     final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
                     final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client,
-                    final Team team, final Channel channel, final AtomicReference<SlackApiException> fatalError) {
+                    final Team team, final Channel channel, final AtomicReference<SlackApiException> fatalError, final List<String> roles) {
                 processedChannelIds.add(channel.getId());
                 // Simulate an operator clicking "stop" in the admin UI while this channel's
                 // messages are (notionally) still being processed.

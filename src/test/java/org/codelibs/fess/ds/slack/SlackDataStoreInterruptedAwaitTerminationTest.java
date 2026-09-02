@@ -160,7 +160,7 @@ public class SlackDataStoreInterruptedAwaitTerminationTest extends UnitDsTestCas
             protected void processChannelMessages(final DataConfig dataConfig, final IndexUpdateCallback callback,
                     final Map<String, Object> configMap, final DataStoreParams paramMap, final Map<String, String> scriptMap,
                     final Map<String, Object> defaultDataMap, final ExecutorService executorService, final SlackClient client,
-                    final Team team, final Channel channel, final AtomicReference<SlackApiException> fatalError) {
+                    final Team team, final Channel channel, final AtomicReference<SlackApiException> fatalError, final List<String> roles) {
                 // Simulate a fatal error already latched by a worker thread before storeData
                 // reaches the (also interrupted) awaitTermination call below.
                 latchFatalError(executorService, fatalError, (AtomicBoolean) configMap.get(CRAWL_ALIVE),

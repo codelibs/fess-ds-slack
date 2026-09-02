@@ -70,6 +70,7 @@ content=message.text
 created=message.timestamp
 timestamp=message.timestamp
 url=message.permalink
+role=message.roles
 ```
 
 | Key | Value |
@@ -80,3 +81,78 @@ url=message.permalink
 | message.timestamp | Timestamp the Message sent. |
 | message.permalink | Permalink of the Message. |
 | message.attachments | Fallback of attachments of the Message. |
+| message.roles | Search roles allowed to see this document. Only present when `permission_sync=true` (see below); a script that omits `role=message.roles` never applies them, so the document is indexed exactly as unrestricted as if `permission_sync` were off. |
+
+### Permission Synchronisation (ACL)
+
+| Key | Default | Value |
+| --- | --- | --- |
+| permission_sync | `false` | `true` or `false`. When `true`, each private channel's membership is resolved into search roles (one per member, by email) and exposed to the crawl script as `message.roles`. A channel whose membership cannot be reliably resolved is skipped entirely for that crawl (fail-closed) rather than indexed without a working access control list. |
+| default_permissions | unset | Comma-separated list of additional permissions, in the admin UI's `{user}name` / `{group}name` / `{role}name` syntax, added to every document's roles. Read **only** when `permission_sync=true`; ignored otherwise. Like every role computed here, it reaches the document only if the script maps `role=message.roles`, and not at all for a channel that failed closed -- nothing from such a channel is indexed. |
+
+**`permission_sync` only computes roles; it does not apply them.** The computed roles are exposed
+to crawl scripts as `message.roles` (see the Scripts table above) -- your script must map
+`role=message.roles` for them to take effect. Without that mapping, `permission_sync=true` costs
+API calls and can skip private channels that fail role resolution, while providing none of the
+access control it promises.
+
+**The computed roles are added to your other permissions, not substituted for them.** A
+document's roles are the union of three sources: the channel's member roles (private channels
+only), `default_permissions`, and this crawl's DataConfig **Permissions** field as saved in the
+admin UI. A document in Fess is visible to anyone holding **any** one of its roles, so each
+source can only widen that document's audience -- none of them narrows it.
+
+**Warning: the admin UI pre-fills the Permissions field with `{role}guest`.** A new Data Store
+config's **Permissions** field is pre-filled from `role.search.default.display.permissions`,
+whose default is `{role}guest`, and `role.search.guest.permissions` hands that same permission to
+every anonymous searcher. Left at that default it is merged into every document's roles,
+private-channel documents included, so their content stays readable by anyone and
+`permission_sync` buys nothing. For a data store crawling private channels, clear that field or
+set it to a suitably restricted role. This data store warns at crawl start when the field grants
+nothing beyond guest *and* `permission_sync` is off with `include_private` on; it does not warn
+when `permission_sync` is on, where the roles are computed correctly and then widened by that
+same field.
+
+**A public channel contributes no roles of its own.** Public channels are treated as visible to
+the whole workspace and are never queried for membership, so with `permission_sync=true` their
+documents carry only `default_permissions` plus the DataConfig **Permissions** field. If both are
+empty, those documents are indexed with an empty role list -- which matches no search-time role
+query at all, making them findable by nobody rather than by everybody. Set one of the two to the
+audience that should see public-channel content; this data store warns once at crawl start when
+neither is set.
+
+**Required Slack OAuth scopes** (bot token):
+
+| Scope | Required when | Used by |
+| --- | --- | --- |
+| `channels:read` | always | `conversations.list`, `conversations.info`; also `conversations.members`, which only `permission_sync=true` calls |
+| `channels:history` | always | `conversations.history`, `conversations.replies` |
+| `users:read` | always | `users.list`, `users.info`, `bots.info` |
+| `team:read` | always | `team.info` |
+| `groups:read` | `include_private=true` | the same `conversations.*` read methods, for private channels |
+| `groups:history` | `include_private=true` | `conversations.history`, `conversations.replies`, for private channels |
+| `files:read` | `file_crawl=true` | `files.list`, `files.info`, and the file download itself |
+| `users:read.email` | `permission_sync=true` | the profile `email` field; Slack requires it alongside `users:read` |
+
+Only `public_channel` (plus `private_channel` when `include_private=true`) is requested from
+`conversations.list`, so no `im:*` / `mpim:*` scopes are needed; `chat.getPermalink` requires no
+scope of its own.
+
+Without `users:read.email`, `Profile#getEmail()` returns `null` for every member, so a private
+channel with members still fails closed (see the `users:read.email` warning in the log) instead
+of being indexed unrestricted.
+
+**The Fess principal name must equal the Slack email, and lowercase.** Search-time roles come
+from `principal.getName()` (the Fess login name) with no normalisation; the roles this feature
+computes come from each member's Slack email. Slack itself normalises email addresses to
+lowercase, so if Fess login names are not also lowercase, the two will never match for any user
+with an uppercase character in their login name. This fails closed -- a mismatched user simply
+sees no results, not someone else's private content -- but it presents as "search silently
+returns nothing" for private-channel content, which is easy to mistake for an unrelated bug.
+Keep Fess login names lowercase to avoid this.
+
+**Enabling this feature does not retroactively secure an already-indexed workspace.** Documents
+indexed by an earlier `permission_sync=false` crawl remain unrestricted in the index; nothing
+removes or re-indexes them automatically. A full re-crawl with `permission_sync=true` (and a
+script that maps `role=message.roles`) is required to apply roles to previously-indexed content.
+Likewise, turning `permission_sync` back off does not restore any restriction on the next crawl.

@@ -104,6 +104,28 @@ public class SlackClientChannelsTest extends UnitDsTestCase {
     }
 
     /**
+     * Slack's real field is {@code is_private}, not {@code private}: {@link Channel#isPrivate()}
+     * derives its implied JSON property name from the getter itself ({@code isPrivate} minus its
+     * {@code is} prefix -- see that field's javadoc), which without an explicit override binds
+     * to the bare word {@code "private"}, a key Slack never actually sends. Before the fix, a
+     * real Slack response is silently parsed as if every channel were public.
+     */
+    @Test
+    public void test_isPrivateDeserializesFromSlacksActualFieldName() {
+        server.enqueue("/api/conversations.list",
+                SlackApiMockServer.json("{\"ok\":true,\"channels\":[{\"id\":\"C1\",\"name\":\"secret\",\"is_private\":true}],"
+                        + "\"response_metadata\":{\"next_cursor\":\"\"}}"));
+
+        final DataStoreParams paramMap = new DataStoreParams();
+        paramMap.put("token", "xoxb-test");
+
+        final List<Channel> channels = new ArrayList<>();
+        server.newClient(paramMap).getChannels(channels::add);
+
+        assertTrue("is_private:true must deserialize to isPrivate()==true", channels.get(0).isPrivate());
+    }
+
+    /**
      * `channels=*all` must not walk conversations.list twice.
      *
      * <p>

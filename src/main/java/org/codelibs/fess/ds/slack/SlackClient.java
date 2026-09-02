@@ -41,6 +41,8 @@ import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsHistoryR
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsInfoRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsListResponse;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsMembersRequest;
+import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsMembersResponse;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesRequest;
 import org.codelibs.fess.ds.slack.api.method.conversations.ConversationsRepliesResponse;
 import org.codelibs.fess.ds.slack.api.method.files.FilesInfoRequest;
@@ -55,6 +57,7 @@ import org.codelibs.fess.ds.slack.api.type.Bot;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
+import org.codelibs.fess.ds.slack.api.type.ResponseMetadata;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.codelibs.fess.entity.DataStoreParams;
@@ -384,6 +387,16 @@ public class SlackClient implements Closeable {
     }
 
     /**
+     * Creates a conversations.members API request builder.
+     *
+     * @param channel the channel ID
+     * @return a new ConversationsMembersRequest instance
+     */
+    public ConversationsMembersRequest conversationsMembers(final String channel) {
+        return new ConversationsMembersRequest(requestContext, channel);
+    }
+
+    /**
      * Creates a conversations.replies API request builder.
      *
      * @param channel the channel ID or name
@@ -668,8 +681,9 @@ public class SlackClient implements Closeable {
     /**
      * Classifies a failed ({@code ok: false}) Slack API response and reacts accordingly. Used by
      * every one of this class's paginated calls (files.list, conversations.list,
-     * conversations.history, conversations.replies, users.list) so the "what does this error
-     * code mean" decision lives in one place instead of five copies of the same switch.
+     * conversations.history, conversations.replies, conversations.members, users.list) so the
+     * "what does this error code mean" decision lives in one place instead of six copies of the
+     * same switch.
      *
      * <p>
      * Four outcomes, in order:
@@ -1076,6 +1090,96 @@ public class SlackClient implements Closeable {
             }
             response = usersList().limit(limit).cursor(nextCursor).execute();
         }
+    }
+
+    /**
+     * Retrieves the member user IDs of a specific channel using {@code conversations.members}.
+     *
+     * <p>
+     * This is the only Slack Web API method that actually returns channel membership --
+     * {@code conversations.list} and {@code conversations.info} never populate {@link
+     * org.codelibs.fess.ds.slack.api.type.Channel#getMembers()} (see that method's javadoc) --
+     * so a caller needing to know who can see a channel must call this explicitly, once per
+     * channel, rather than reading it off an already-fetched {@link
+     * org.codelibs.fess.ds.slack.api.type.Channel}.
+     * </p>
+     *
+     * <p>
+     * <b>Returns {@code false}, rather than throwing, for a channel-scoped failure.</b> Every
+     * other paging method in this class ({@link #getAllChannels}, {@link #getChannelMessages},
+     * {@link #getChannelFiles}, {@link #getUsers}) is {@code void}: {@link #handleApiError}
+     * either throws {@link SlackApiException} for a fatal/transient code (still true here, and
+     * still propagates uncaught) or warns and returns for a channel-scoped code such as {@code
+     * channel_not_found}, and none of those callers needs to tell "warned and stopped" apart
+     * from "walked every page and found nothing". A caller computing ACLs does need exactly that
+     * distinction -- see the design plan's fail-closed rule (D3): a private channel whose
+     * membership could not be determined must be skipped entirely, not indexed as if it had no
+     * members. A dedicated checked exception was rejected for this: it would make a routine,
+     * per-channel condition (one channel returning {@code channel_not_found} while the rest of
+     * the crawl is healthy) look like the same kind of failure {@link SlackApiException} already
+     * means -- "the whole crawl cannot continue" -- forcing every caller to either catch it
+     * per-channel (indistinguishable in effect from this boolean) or let it escape and abort the
+     * entire crawl over one channel. A boolean is the minimal signal the caller actually needs:
+     * "were the members {@code consumer} received the complete, authoritative list, or not".
+     * </p>
+     *
+     * @param channelId the channel ID
+     * @param consumer the function to process each member user ID
+     * @return {@code true} if every page was fetched successfully (including the zero-member
+     *         case on an {@code ok:true} response with an empty list), {@code false} if a
+     *         channel-scoped error, or a malformed {@code ok:true} response missing {@code
+     *         members}/{@code response_metadata}, stopped the walk before it completed
+     */
+    public boolean getChannelMembers(final String channelId, final Consumer<String> consumer) {
+        ConversationsMembersResponse response = conversationsMembers(channelId).execute();
+        while (true) {
+            if (!response.ok()) {
+                handleApiError("conversations.members", response);
+                return false;
+            }
+            // Minor (whole-branch review, Phase 3): guarded, unlike this class's other paging
+            // methods (getAllChannels/getChannelMessages/getUsers), which would NPE the same way
+            // on a malformed ok:true response. The blast radius differs here: those callers run
+            // on storeData's own thread and an uncaught NPE there fails the whole crawl the same
+            // way a fatal SlackApiException does, whereas this method's caller
+            // (computeChannelRoles) is written to expect a plain false for "this one channel's
+            // membership could not be determined" -- an NPE escaping this method instead skips
+            // that per-channel handling entirely and fails the whole crawl.
+            final List<String> members = response.getMembers();
+            if (members == null) {
+                logger.warn("\"conversations.members\" response for channel {} carries no \"members\" field; treating this as a "
+                        + "channel-scoped failure.", channelId);
+                return false;
+            }
+            members.forEach(consumer);
+            if (!aliveSupplier.getAsBoolean()) {
+                // Considered and rejected returning false here: true is the same "no error"
+                // signal getUsers/getChannelMessages already give a stop landing mid-page, and
+                // an incomplete member list from a stop is safe in this fail-closed feature's
+                // direction -- it can only omit a role (fewer people see the document), never
+                // add one -- unlike an API failure, which must not be treated as "zero members".
+                return true;
+            }
+            final ResponseMetadata responseMetadata = response.getResponseMetadata();
+            if (responseMetadata == null) {
+                logger.warn("\"conversations.members\" response for channel {} carries no \"response_metadata\" field; treating "
+                        + "this as a channel-scoped failure.", channelId);
+                return false;
+            }
+            // StringUtil.isEmpty, not nextCursor.isEmpty(): getNextCursor() is documented to
+            // return null when there are no more pages, and Jackson leaves the field null for a
+            // "response_metadata":{} body that carries no "next_cursor" key at all -- a shape the
+            // guard above cannot catch, since response_metadata itself is present. Reached on a
+            // real response, not only a malformed one, so this is the last page rather than a
+            // channel-scoped failure. An NPE here would escape past computeChannelRoles'
+            // per-channel handling and fail the whole crawl, exactly as described above.
+            final String nextCursor = responseMetadata.getNextCursor();
+            if (StringUtil.isEmpty(nextCursor)) {
+                break;
+            }
+            response = conversationsMembers(channelId).cursor(nextCursor).execute();
+        }
+        return true;
     }
 
 }
