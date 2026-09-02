@@ -1497,6 +1497,45 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
+     * Returns a per-document copy of {@code paramMap} carrying {@code statsKey} under
+     * {@link Constants#CRAWLER_STATS_KEY}, for the single {@code callback.store} call that
+     * document makes.
+     *
+     * <p>
+     * The stats key identifies one document for statistics and logging; it is not crawl state
+     * to be shared. This store dispatches {@link #processMessage} and {@link #processFile} to a
+     * pool of {@code number_of_threads} workers that all receive the same {@code paramMap}
+     * instance, so writing the key straight onto that instance lets one worker overwrite
+     * another's between the write and the {@code callback.store} that consumes it. The
+     * single-threaded stores write it directly and are correct doing so -- {@code CsvDataStore},
+     * {@code DatabaseDataStore}, {@code JsonDataStore}, {@code GitDataStore} declare no executor
+     * at all -- while the multi-threaded {@code ConfluenceDataStore} in fess-ds-atlassian takes
+     * this same copy. This store is multi-threaded, so it follows the latter.
+     * </p>
+     *
+     * <p>
+     * {@link DataStoreParams#newInstance()} is a genuine shallow copy, not a view, so the copy's
+     * key is invisible to the other workers. One side effect is worth stating: because the key
+     * is now never written to the shared map, {@link #newResultMap} can no longer copy it into
+     * the script scope. Groovy could not reach it by name -- {@code "crawler.stats.key"}
+     * contains dots, so the name resolves as property navigation rather than as a binding --
+     * but {@link AbstractDataStore#convertValue} returns a value verbatim when a script template
+     * matches a resultMap key exactly, so a scriptMap entry of {@code field=crawler.stats.key}
+     * did index the object, and under {@code number_of_threads > 1} the instance it indexed
+     * could have belonged to a different document.
+     * </p>
+     *
+     * @param paramMap the data store parameters shared by every worker thread
+     * @param statsKey the stats key identifying the one document about to be stored
+     * @return a copy of {@code paramMap} carrying {@code statsKey}
+     */
+    protected DataStoreParams newStatsParams(final DataStoreParams paramMap, final StatsKeyObject statsKey) {
+        final DataStoreParams localParams = paramMap.newInstance();
+        localParams.put(Constants.CRAWLER_STATS_KEY, statsKey);
+        return localParams;
+    }
+
+    /**
      * Resolves the URL to record via {@code FailureUrlService} for a failed crawl, and, when the
      * failure asks to abort, clears this crawl's stop flag.
      *
@@ -1613,7 +1652,7 @@ public class SlackDataStore extends AbstractDataStore {
             url = channel.getId() + "/" + message.getTs();
         }
         final StatsKeyObject statsKey = new StatsKeyObject(url);
-        paramMap.put(Constants.CRAWLER_STATS_KEY, statsKey);
+        final DataStoreParams localParams = newStatsParams(paramMap, statsKey);
         try {
             crawlerStatsHelper.begin(statsKey);
 
@@ -1674,7 +1713,7 @@ public class SlackDataStore extends AbstractDataStore {
                 statsKey.setUrl(statsUrl);
             }
 
-            callback.store(paramMap, dataMap);
+            callback.store(localParams, dataMap);
             crawlerStatsHelper.record(statsKey, StatsAction.FINISHED);
         } catch (final CrawlingAccessException e) {
             logDocumentFailure(url, dataMap, e);
@@ -1747,7 +1786,7 @@ public class SlackDataStore extends AbstractDataStore {
         final Map<String, Object> dataMap = new HashMap<>(defaultDataMap);
         final String url = file.getPermalink();
         final StatsKeyObject statsKey = new StatsKeyObject(url);
-        paramMap.put(Constants.CRAWLER_STATS_KEY, statsKey);
+        final DataStoreParams localParams = newStatsParams(paramMap, statsKey);
         try {
             crawlerStatsHelper.begin(statsKey);
 
@@ -1826,7 +1865,7 @@ public class SlackDataStore extends AbstractDataStore {
             if (dataMap.get("url") instanceof String statsUrl) {
                 statsKey.setUrl(statsUrl);
             }
-            callback.store(paramMap, dataMap);
+            callback.store(localParams, dataMap);
             crawlerStatsHelper.record(statsKey, StatsAction.FINISHED);
         } catch (final CrawlingAccessException e) {
             logDocumentFailure(url, dataMap, e);
