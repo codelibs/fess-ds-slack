@@ -55,11 +55,24 @@ accepted. See the Slack data store page in the Fess documentation for the full l
 ### Error Handling
 
 A Slack API call that fails outright -- the token itself can no longer authenticate, or a rate
-limit / server error survives every retry -- fails the whole crawl job instead of silently
-indexing a partial or empty result as a "success". A failure scoped to one channel or one page
-(for example a channel the token cannot see) is instead warned about and skipped, and the crawl
-continues with the next channel. See the `SlackDataStore` class javadoc in the source for the
-full mechanism.
+limit / server error survives every retry -- aborts this crawl instead of silently indexing a
+partial or empty result as a "success". A failure scoped to one channel or one page (for example
+a channel the token cannot see) is instead warned about and skipped, and the crawl continues with
+the next channel. See the `SlackDataStore` class javadoc in the source for the full mechanism.
+
+**An aborted crawl still leaves the scheduler job reporting success.** Fess catches a data
+store's exception per data config (`DataIndexHelper`), so the job log says the job finished
+normally whatever this data store does. Three places record what actually happened, and a crawl
+that aborted has all three:
+
+* the crawler log carries `ERROR ... Failed to process a data crawling: <config name>`, with the
+  Slack error code in the exception message;
+* **Crawler > Failure URL** gains a row whose URL column is `<configId>:<config name>` -- the
+  whole data config, not a document -- naming `SlackApiException` and the error code;
+* the number of documents indexed for the config is short, or zero.
+
+Monitor those rather than the job status: a token that expires mid-crawl produces a green job and
+a partially updated index, and the difference is only visible in the log and the failure list.
 
 This applies to the single-object lookups too -- resolving a user name, a bot name, a channel by
 name, or a message permalink. A lookup that simply finds nothing (`user_not_found` and the like)

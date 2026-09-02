@@ -2118,8 +2118,10 @@ public class SlackDataStore extends AbstractDataStore {
             // lookup: it exists so an unknown user or a malformed message leaves the username
             // empty instead of failing the document, and a fatal Slack error is neither. The
             // worker task running this (processChannelMessages/processChannelFiles) forwards it
-            // to latchFatalError, which is what makes the job fail rather than finish green with
-            // raw IDs in the author field.
+            // to latchFatalError, which is what aborts the crawl rather than letting it finish
+            // with raw IDs in the author field. Note that the scheduler job still reports
+            // success either way -- Fess catches a data store's exception per data config -- so
+            // the abort is visible only in the crawler log and the failure URL list.
             throw e;
         } catch (final Exception e) {
             if (logger.isDebugEnabled()) {
