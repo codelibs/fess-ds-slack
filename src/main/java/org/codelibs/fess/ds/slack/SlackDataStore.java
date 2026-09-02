@@ -30,6 +30,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -48,6 +49,7 @@ import org.codelibs.fess.ds.slack.api.type.Attachment;
 import org.codelibs.fess.ds.slack.api.type.Channel;
 import org.codelibs.fess.ds.slack.api.type.File;
 import org.codelibs.fess.ds.slack.api.type.Message;
+import org.codelibs.fess.ds.slack.api.type.Profile;
 import org.codelibs.fess.ds.slack.api.type.Team;
 import org.codelibs.fess.ds.slack.api.type.User;
 import org.codelibs.fess.entity.DataStoreParams;
@@ -515,7 +517,8 @@ public class SlackDataStore extends AbstractDataStore {
             }
 
             final String fileContent = getFileContent(client, file, ignoreError);
-            fileMap.put(MESSAGE_TITLE, file.getName() + " " + file.getTitle());
+            fileMap.put(MESSAGE_TITLE,
+                    Stream.of(file.getName(), file.getTitle()).filter(StringUtil::isNotBlank).collect(Collectors.joining(" ")));
             fileMap.put(MESSAGE_TEXT, file.getName() + "\n" + fileContent);
             // fileMap.put(MESSAGE_TEAM, team.getName());
             fileMap.put(MESSAGE_TIMESTAMP, getFileTimestamp(file));
@@ -604,13 +607,25 @@ public class SlackDataStore extends AbstractDataStore {
     }
 
     /**
-     * Converts a file timestamp to a Date object.
+     * Converts a file's creation time to a Date object. Slack documents
+     * {@code timestamp} as deprecated and kept only for backwards
+     * compatibility, so {@code created} is preferred; {@code timestamp} is
+     * used only when {@code created} is absent.
      *
-     * @param file the file containing the timestamp
-     * @return the timestamp as a Date object
+     * @param file the file containing the creation time
+     * @return the creation time as a Date object, or null if the file carries
+     *         neither {@code created} nor {@code timestamp}
      */
     protected Date getFileTimestamp(final File file) {
-        return new Date(file.getTimestamp() * 1000L);
+        final Long created = file.getCreated();
+        if (created != null) {
+            return new Date(created.longValue() * 1000L);
+        }
+        final Long timestamp = file.getTimestamp();
+        if (timestamp != null) {
+            return new Date(timestamp.longValue() * 1000L);
+        }
+        return null;
     }
 
     /**
@@ -673,17 +688,25 @@ public class SlackDataStore extends AbstractDataStore {
     protected String getUsername(final SlackClient client, final String userId) {
         try {
             final User user = client.getUser(userId);
-            if (user.getProfile().getDisplayName() != null) {
-                return user.getProfile().getDisplayName();
-            }
-            if (user.getRealName() != null) {
-                return user.getRealName();
-            }
-            if (user.getName() != null) {
-                return user.getName();
+            if (user != null) {
+                final Profile profile = user.getProfile();
+                if (profile != null) {
+                    if (StringUtil.isNotBlank(profile.getDisplayName())) {
+                        return profile.getDisplayName();
+                    }
+                    if (StringUtil.isNotBlank(profile.getRealName())) {
+                        return profile.getRealName();
+                    }
+                }
+                if (StringUtil.isNotBlank(user.getRealName())) {
+                    return user.getRealName();
+                }
+                if (StringUtil.isNotBlank(user.getName())) {
+                    return user.getName();
+                }
             }
         } catch (final ExecutionException e) {
-            logger.warn("Failed to get username from user.", e);
+            logger.warn("Failed to get username from user: {}", userId, e);
         }
         return userId;
     }
@@ -697,10 +720,9 @@ public class SlackDataStore extends AbstractDataStore {
     protected String getMessageAttachmentsText(final Message message) {
         final List<Attachment> attachments = message.getAttachments();
         if (attachments == null) {
-            return "";
+            return StringUtil.EMPTY;
         }
-        final List<String> fallbacks = attachments.stream().map(Attachment::getFallback).collect(Collectors.toList());
-        return String.join("\n", fallbacks);
+        return attachments.stream().map(Attachment::getFallback).filter(StringUtil::isNotBlank).collect(Collectors.joining("\n"));
     }
 
     /**
