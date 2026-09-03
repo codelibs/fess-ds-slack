@@ -98,7 +98,7 @@ role=message.roles
 | message.user | User(display name) of the Message. |
 | message.channel | Channel name the Message sent. |
 | message.timestamp | Timestamp the Message sent. |
-| message.permalink | Permalink of the Message. |
+| message.permalink | Permalink of the Message. Composed from the workspace domain that `team.info` returns; only if that call failed is `chat.getPermalink` asked instead, and the two do not produce the same string for a threaded message -- see **Message URLs and `team:read`** below. |
 | message.attachments | Fallback of attachments of the Message. |
 | message.roles | Search roles allowed to see this document. Only present when `permission_sync=true` (see below); a script that omits `role=message.roles` never applies them, so the document is indexed exactly as unrestricted as if `permission_sync` were off. |
 
@@ -156,6 +156,18 @@ neither is set.
 Only `public_channel` (plus `private_channel` when `include_private=true`) is requested from
 `conversations.list`, so no `im:*` / `mpim:*` scopes are needed; `chat.getPermalink` requires no
 scope of its own.
+
+**Message URLs and `team:read`.** A message's URL is the Fess document id, and which of two forms
+it takes depends on whether `team.info` succeeded. With it, the URL is composed as
+`https://<domain>.slack.com/archives/<channel>/p<ts>`. Without it -- a token missing `team:read`,
+or a transient failure of that one call -- every message's URL comes from `chat.getPermalink`
+instead, and Slack appends `?thread_ts=..&cid=..` to anything inside a thread. Both open the same
+message in Slack, but they are different document ids here. `team.info` is read once per crawl, so
+the two forms never mix within a crawl; they do differ between crawls of the same workspace if
+`team:read` is added or removed, and every threaded message is then re-indexed under a new id while
+the old one stays in the index until `day.for.cleanup` expires it. Granting `team:read` -- which
+this table already lists as always required -- avoids both that and the extra `chat.getPermalink`
+call this data store otherwise makes for every single message.
 
 Without `users:read.email`, `Profile#getEmail()` returns `null` for every member, so a private
 channel with members still fails closed (see the `users:read.email` warning in the log) instead
